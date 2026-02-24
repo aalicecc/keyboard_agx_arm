@@ -6,15 +6,17 @@ try:
     import viser
     import yourdfpy
     from viser.extras import ViserUrdf
+
     _VISER_AVAILABLE = True
 except ImportError:
     _VISER_AVAILABLE = False
 
 
-# ── Subprocess target ───────────────────────────────────────────────
+# Subprocess target
+
 
 def _visualization_loop(urdf, root_name, joint_queue: mp.Queue, shutdown_event):
-    """Viser server loop (runs in a child process)."""
+    """Viser server loop."""
     server = viser.ViserServer()
     server.scene.add_grid("/ground", width=2.0, height=2.0)
     urdf_vis = ViserUrdf(server, urdf, root_node_name=root_name)
@@ -37,14 +39,15 @@ def _visualization_loop(urdf, root_name, joint_queue: mp.Queue, shutdown_event):
         pass
 
 
-# ── Visualizer class ────────────────────────────────────────────────
+# Visualizer class
+
 
 class Visualizer:
     """Manages a Viser visualization subprocess."""
 
     def __init__(self, urdf_path: str, mesh_path: str, root_name: str):
-        self._process  = None
-        self._queue    = None
+        self._process = None
+        self._queue = None
         self._shutdown = None
 
         if not _VISER_AVAILABLE or not urdf_path:
@@ -56,9 +59,9 @@ class Visualizer:
                 mp.set_start_method("spawn")
             except RuntimeError:
                 pass
-            self._queue    = mp.Queue(maxsize=10)
+            self._queue = mp.Queue(maxsize=10)
             self._shutdown = mp.Event()
-            self._process  = mp.Process(
+            self._process = mp.Process(
                 target=_visualization_loop,
                 args=(urdf, root_name, self._queue, self._shutdown),
                 daemon=True,
@@ -67,15 +70,23 @@ class Visualizer:
         except Exception:
             self._process = None
 
-    # ── Public API ──────────────────────────────────────────────────
+    # Public API
 
-    def update(self, joint_angles: np.ndarray, gripper_pct: float,
-               gripper_max_width: float, gripper_urdf_joints: int):
+    def update(
+        self,
+        joint_angles: np.ndarray,
+        effector_pct: float,
+        effector_max_width: float,
+        effector_urdf_joints: int,
+    ):
         """Send current configuration to the visualization process."""
         if self._queue is None:
             return
         joints = self._build_joint_list(
-            joint_angles, gripper_pct, gripper_max_width, gripper_urdf_joints,
+            joint_angles,
+            effector_pct,
+            effector_max_width,
+            effector_urdf_joints,
         )
         self._enqueue(joints)
 
@@ -86,21 +97,21 @@ class Visualizer:
         if self._process is not None:
             self._process.join(timeout=2)
 
-    # ── Internals ───────────────────────────────────────────────────
+    # Internals
 
     @staticmethod
-    def _build_joint_list(joint_angles, gripper_pct, max_width, urdf_joints):
-        """Append gripper finger joints to the joint-angle array."""
+    def _build_joint_list(joint_angles, effector_pct, max_width, urdf_joints):
+        """Build full joint list from arm joints and effector aperture."""
         joints = joint_angles.copy()
         if urdf_joints > 0:
-            half_width = max_width * gripper_pct * 1e-2 / 2
+            half_width = max_width * effector_pct * 1e-2 / 2
             for i in range(urdf_joints):
                 sign = 1.0 if i % 2 == 0 else -1.0
                 joints = np.append(joints, sign * half_width)
         return joints.tolist()
 
     def _enqueue(self, data):
-        """Non-blocking put; drops the oldest item when the queue is full."""
+        """drops the oldest item when the queue is full."""
         try:
             self._queue.put_nowait(data)
         except queue.Full:
@@ -112,4 +123,3 @@ class Visualizer:
                 self._queue.put_nowait(data)
             except queue.Full:
                 pass
-

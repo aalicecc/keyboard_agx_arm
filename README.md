@@ -1,153 +1,154 @@
-# 手柄遥操机械臂——直观的机械臂控制新体验
+# 键盘遥操机械臂——终端下的直观机械臂控制
 
 ## 摘要
 
-本文通过游戏手柄实现直观的机械臂控制。使用标准的游戏手柄，您可以在可视化环境中操控PiPER机械臂，带来精准而直观的控制体验。
+通过键盘在终端/SSH 环境下直观控制机械臂（支持 PiPER、Nero 等）。基于 `pynput` 全局键盘监听，无需图形窗口，同时提供 Viser 网页 3D 可视化。
 
 ## 标签
-PiPER机械臂、手柄遥操、关节控制、位姿控制、夹爪控制、运动学正逆解
+PiPER机械臂、Nero机械臂、键盘遥操、关节控制、位姿控制、夹爪控制、运动学正逆解
 
-## 仓库
+## 支持的机械臂
 
-- **导航仓库**: https://github.com/agilexrobotics/Agilex-College
-- **项目仓库**: https://github.com/kehuanjack/Gamepad_PiPER
+| 型号 | 关节数 | 夹爪 | MIT模式 |
+|------|--------|------|---------|
+| piper | 6 | ✅ | ✅ |
+| piper_h | 6 | ✅ | ✅ |
+| piper_l | 6 | ✅ | ✅ |
+| piper_x | 6 | ✅ | ✅ |
+| nero | 7 | ❌ | ❌ |
 
-## 功能演示
+## 项目结构
 
-[![](https://i.ytimg.com/an_webp/smTTbOfdTlk/mqdefault_6s.webp?du=3000&sqp=CJXS7McG&rs=AOn4CLBfiWjTsfz7kRpplE8f4Wx6WtDRlg)](https://youtu.be/smTTbOfdTlk)
+```
+keyboard_agx_arm/
+├── cfg/
+│   ├── __init__.py
+│   └── robot_config.py          # 机器人统一配置 + 控制参数常量
+├── robot_description/            # URDF / meshes
+├── src/
+│   ├── keyboard_agx_arm/
+│   │   ├── arm_state.py         # 机械臂运行时状态
+│   │   ├── arm_controller.py    # 键盘控制核心逻辑
+│   │   ├── keyboard_input.py    # 键盘输入监听与解析
+│   │   └── visualizer.py        # Viser 3D 可视化
+│   └── utility/
+│       ├── tcp_offset.py        # TCP 偏移计算
+│       └── kinematic_adapter.py # 运动学后端适配器
+├── main_keyboard.py             # 实体机械臂入口
+└── main_keyboard_virtual.py     # 虚拟机械臂入口（无需硬件）
+```
 
 ## 环境配置
-- 操作系统：Ubuntu 20.04或更高版本
 
-- Python环境：Python 3.9或更高版本，推荐使用Anaconda或Miniconda
+- 操作系统：Ubuntu 20.04 或更高版本
+- Python 环境：Python 3.10 或更高版本，推荐使用 Anaconda 或 Miniconda
 
-- 克隆项目并切换至项目根目录下：
+安装依赖：
 
-   ```bash
-   git clone https://github.com/kehuanjack/Gamepad_PiPER.git
-   cd Gamepad_PiPER
-   ```
+```bash
+pip3 install pynput viser numpy scipy
+```
 
-- 安装通用的依赖库和运动学模块的依赖库（四选一，推荐使用pytracik库）：
+安装运动学后端（推荐 pytracik）：
 
-   - 基于[pinocchio](https://github.com/stack-of-tasks/pinocchio)库（Python == 3.9，需要安装[piper_ros](https://github.com/agilexrobotics/piper_ros)，并source机械臂的ros工作空间，否则会找不到meshes文件）：
-
-      ```bash
-      conda create -n test_pinocchio python=3.9.* -y
-      conda activate test_pinocchio
-      pip3 install -r requirements_common.txt --upgrade
-      conda install pinocchio=3.6.0 -c conda-forge
-      pip install meshcat
-      pip install casadi
-      ```
-
-      需要在`main.py`和`main_virtual.py`文件中选择`from src.gamepad_pin import RoboticArmController`
-
-   - 基于[PyRoKi](https://github.com/chungmin99/pyroki)库（Python >= 3.10）:
-
-      ```bash
-      conda create -n test_pyroki python=3.10.* -y
-      conda activate test_pyroki
-      pip3 install -r requirements_common.txt --upgrade
-      pip3 install pyroki@git+https://github.com/chungmin99/pyroki.git@f234516
-      ```
-
-      需要在`main.py`和`main_virtual.py`文件中选择`from src.gamepad_limit import RoboticArmController`或`from src.gamepad_no_limit import RoboticArmController`
-
-   - 基于[cuRobo](https://github.com/NVlabs/curobo)库（Python >= 3.8，推荐的CUDA版本为11.8）:
-
-      ```bash
-      conda create -n test_curobo python=3.10.* -y
-      conda activate test_curobo
-      pip3 install -r requirements_common.txt --upgrade
-      sudo apt install git-lfs && cd ../
-      git clone https://github.com/NVlabs/curobo.git && cd curobo
-      pip3 install "numpy<2.0" "torch==2.0.0" pytest lark
-      pip3 install -e . --no-build-isolation
-      python3 -m pytest .
-      cd ../Gamepad_PiPER
-      ```
-
-      需要在`main.py`和`main_virtual.py`文件中选择`from src.gamepad_curobo import RoboticArmController`
-
-   - 基于[pytracik](https://github.com/chenhaox/pytracik)库（Python >= 3.10）:
-
-      ```bash
-      conda create -n test_tracik python=3.10.* -y
-      conda activate test_tracik
-      pip3 install -r requirements_common.txt --upgrade
-      git clone https://github.com/chenhaox/pytracik.git
-      cd pytracik
-      pip install -r requirements.txt
-      sudo apt install g++ libboost-all-dev libeigen3-dev liborocos-kdl-dev libnlopt-dev libnlopt-cxx-dev
-      python setup_linux.py install --user
-      ```
-
-      需要在`main.py`和`main_virtual.py`文件中选择`from src.gamepad_trac_ik import RoboticArmController`
+```bash
+git clone https://github.com/chenhaox/pytracik.git
+cd pytracik
+pip install -r requirements.txt
+sudo apt install g++ libboost-all-dev libeigen3-dev liborocos-kdl-dev libnlopt-dev libnlopt-cxx-dev
+python setup_linux.py install --user
+```
 
 ## 执行步骤
 
-1. **连接机械臂并激活CAN模块**：`sudo ip link set can0 up type can bitrate 1000000`
+### 虚拟模式（无需硬件）
 
-2. **连接游戏手柄**：将手柄通过USB或蓝牙连接到电脑
+```bash
+python3 main_keyboard_virtual.py --robot piper
+```
 
-3. **启用控制服务**：在项目目录下运行`python3 main.py`或`python3 main_virtual.py`，建议先运行`main_virtual.py`进行虚拟机械臂测试
+### 实体机械臂
 
-4. **手柄连接验证**：程序启动后，检查控制台输出确认手柄已正确识别
+1. **激活 CAN 模块**：
 
-5. **网页可视化**：打开浏览器，输入`http://localhost:8080`访问网页，可视化显示机械臂状态
+```bash
+sudo ip link set can0 up type can bitrate 1000000
+```
 
-6. **开始控制**：按照手柄映射说明操作机械臂
+或使用内置参数：
 
-## 手柄控制说明
+```bash
+python3 main_keyboard.py --robot piper_x --channel can0 --setup-can
+```
 
-### 按钮功能映射
+2. **启动控制**：
 
-| 按钮 | 短按功能 | 长按功能 |
+```bash
+python3 main_keyboard.py --robot piper_x --channel can0
+python3 main_keyboard.py --robot nero --channel can0 --effector REVO2
+```
+
+3. **网页可视化**：打开浏览器访问 `http://localhost:8080` 查看机械臂 3D 状态
+
+## 键盘控制说明
+
+### 功能键映射
+
+| 按键 | 短按功能 | 长按功能 |
 |------|----------|----------|
-| **HOME** | 连接/断开机械臂 | 无 |
-| **START** | 切换上层的控制模式（关节/位姿）| 切换底层的控制模式（关节/位姿）|
-| **BACK** | 切换底层的命令模式（位置速度0x00/快速响应0xAD）| 无 |
-| **Y** | 回零位置 | 无 |
-| **A** | 保存当前位置 | 清除当前保存的位置 |
-| **B** | 恢复上一个保存的位置 | 无 |
-| **X** | 切换位置回放顺序 | 清除所有保存的位置 |
-| **LB** | 增加速度因子（上层） | 减少速度因子（上层） |
-| **RB** | 增加移动速度（底层） | 减少移动速度（底层） |
+| **Space** | 连接/断开机械臂 | — |
+| **-** | 切换上层控制模式（关节 ↔ 位姿） | 切换底层控制模式（关节 ↔ 位姿） |
+| **=** | 切换命令模式（Normal ↔ MIT） | — |
+| **1** | 回零位置 | — |
+| **2** | 保存当前位置 | 清除当前保存的位置 |
+| **3** | 恢复下一个保存的位置 | — |
+| **4** | 切换回放顺序（顺序 ↔ 逆序） | 清除所有保存的位置 |
+| **Q** | 增加控制速度因子 | 减少控制速度因子 |
+| **E** | 增加回放速度 | 减少回放速度 |
 
-### 摇杆与扳机功能
+### 运动按键
 
-| 控制元件 | 关节模式功能 | 位姿模式功能 |
-|----------|--------------|--------------|
-| **左摇杆** | J1（底座旋转）：左右<br/>J2（大臂）：上下 | 末端X/Y轴移动 |
-| **右摇杆** | J3（小臂）：上下<br/>J6（腕部旋转）：左右 | 末端Z轴移动和绕Z轴旋转 |
-| **方向键** | J4（腕部偏航）：左右<br/>J5（腕部俯仰）：上下 | 末端绕X/Y轴旋转 |
-| **左扳机 (LT)** | 关闭夹爪 | 关闭夹爪 |
-| **右扳机 (RT)** | 打开夹爪 | 打开夹爪 |
+| 按键 | 关节模式功能 | 位姿模式功能 |
+|------|--------------|--------------|
+| **A / D** | J1（底座旋转） | 末端 X 轴移动 |
+| **W / S** | J2（大臂） | 末端 Y 轴移动 |
+| **Z / X** | J3（小臂） | 末端 Z 轴移动 |
+| **Y / H** | J4（腕部偏航） | 末端绕 X 轴旋转（Roll） |
+| **U / J** | J5（腕部俯仰） | 末端绕 Y 轴旋转（Pitch） |
+| **I / K** | J6（腕部旋转） | 末端绕 Z 轴旋转（Yaw） |
+| **O / L** | J7（仅 Nero） | — |
+| **F / G** | 关闭 / 打开夹爪 | 关闭 / 打开夹爪 |
 
-### 特殊功能说明
+### 控制模式说明
 
-1. **夹爪控制**:
-   - 夹爪开合程度范围: 0-100%
-   - 特殊跳变功能: 当夹爪处于完全关闭（0%）或完全打开（100%）状态时，快速按下并释放扳机可实现状态跳变
+1. **上层模式 (up_level_mode)**：决定键盘轴映射方式
+   - `joint`：按键直接驱动各关节
+   - `pose`：按键控制末端位姿（笛卡尔空间）
 
-2. **速度控制**:
-   - 速度因子: 0.25x, 0.5x, 1.0x, 2.0x, 3.0x, 4.0x, 5.0x（通过LB切换）
-   - 移动速度: 10%-100%（通过RB切换）
+2. **底层模式 (low_level_mode)**：决定发送给硬件的指令类型
+   - `joint`：发送关节角度（move_j / move_js）
+   - `pose`：发送末端位姿（move_p）
 
-3. **位置记忆**:
-   - 可保存多个位置点
-   - 支持顺序和逆序回放
+3. **命令模式 (command_mode)**：
+   - `Normal (0x00)`：位置速度模式，平稳运动
+   - `MIT (0xAD)`：快速响应模式，低延迟（⚠️ 危险，需保持安全距离）
+
+### 速度控制
+
+- **控制速度因子**：0.25× / 0.5× / 1.0×（通过 Q 键循环切换），影响每次按键的步进量
+- **回放速度**：10% ~ 100%（通过 E 键循环切换），影响实体机械臂运动速度
+
+### 位置记忆
+
+- 可保存多个位置点（关节角度 + 夹爪状态）
+- 支持顺序和逆序回放
+- 按 **2** 保存，按 **3** 恢复，按 **4** 切换回放方向
 
 ## 注意事项
 
-- 可以先运行`main_virtual.py`进行虚拟机械臂测试
-- 初次使用建议从低速模式开始，熟悉操作后再提高速度
-- 机械臂运行期间请保持安全距离，切勿靠近运动中的机械臂，否则后果自负
-- 数值解在接近临界点时可能出现大幅度的关节跳动，请保持安全距离，否则后果自负
-- 快速响应模式（0xAD）很危险，请谨慎使用，如要使用请保持安全距离，否则后果自负
-- 如果选择使用pinocchio库，需要提前source机械臂的ros工作空间，否则会找不到meshes文件
-
-## Star History
-
-[![Star History Chart](https://api.star-history.com/svg?repos=kehuanjack/Gamepad_PiPER&type=date&legend=top-left)](https://www.star-history.com/#kehuanjack/Gamepad_PiPER&type=date&legend=top-left)
+- 建议先运行 `main_keyboard_virtual.py` 进行虚拟测试
+- 初次使用建议从低速模式（0.25×）开始，熟悉后再提高
+- 机械臂运行期间请保持安全距离
+- 数值解在接近奇异点时可能出现关节跳动，请注意安全
+- **MIT 快速响应模式（0xAD）危险，请谨慎使用**
+- 长按阈值为 0.5 秒
