@@ -3,23 +3,25 @@ from cfg.robot_config import (
     CMD_MODE_NORMAL, CMD_MODE_MIT,
     CONTROL_PARAMS,
 )
+from effector import create_effector_state
 
 
 class ArmState:
 
     def __init__(self, num_joints: int, joint_limits: list,
-                 effector_name: str = None, effector_params: dict = None):
+                 effector_type: str = None, effector_params: dict = None):
         self.num_joints   = num_joints
         self.joint_limits = joint_limits
 
         # Kinematic state
-        self.joint_angles = np.zeros(num_joints)
-        self.xyz_wxyz     = np.zeros(7)
-        self.xyz_rpy      = np.zeros(6)
+        self.joint_angles   = np.zeros(num_joints)
+        self.tcp_xyz_wxyz   = np.zeros(7)
+        self.tcp_xyz_rpy    = np.zeros(6)
+        self.flange_xyz_rpy = np.zeros(6)
 
         # Effector
-        self.effector_name = effector_name
-        self._init_effector(effector_name, effector_params or {})
+        self.effector_type = effector_type
+        self.effector = create_effector_state(effector_type, effector_params or {})
 
         # Step sizes
         self.joint_step       = CONTROL_PARAMS["joint_step_rad"]
@@ -38,8 +40,8 @@ class ArmState:
         # Speed
         self._control_speed_factors      = list(CONTROL_PARAMS["control_speed_factors"])
         self._control_speed_factor_index = CONTROL_PARAMS["control_speed_factor_index"]
-        self._replay_speeds              = list(CONTROL_PARAMS["replay_speeds"])
-        self._replay_speed_index         = CONTROL_PARAMS["replay_speed_index"]
+        self._movement_speeds            = list(CONTROL_PARAMS["movement_speeds"])
+        self._movement_speed_index       = CONTROL_PARAMS["movement_speed_index"]
 
         # Saved positions
         self.saved_positions = []
@@ -47,29 +49,15 @@ class ArmState:
         self.replay_reversed = False
 
 
-    def _init_effector(self, name, params):
-        """Initialize effector-specific state variables by type name."""
-        if name == "AGX_GRIPPER":
-            self.gripper_state     = params["gripper_min"]
-            self.gripper_max_width = params["gripper_max_width"]
-            self.effector_step     = params["effector_step"]
-            self.effector_min      = params["gripper_min"]
-            self.effector_max      = params["gripper_max"]
-        # elif name == "REVO2":
-        #     TODO: 实现灵巧手初始化
-        #     pass
-        else:
-            pass
-
     # Speed factor query
 
     def get_control_speed_factor(self) -> float:
         """Current velocity scaling factor."""
         return self._control_speed_factors[self._control_speed_factor_index]
 
-    def get_replay_speed(self) -> int:
+    def get_movement_speed(self) -> int:
         """Current speed percentage."""
-        return self._replay_speeds[self._replay_speed_index]
+        return self._movement_speeds[self._movement_speed_index]
 
     # Joint limits
 
@@ -79,7 +67,7 @@ class ArmState:
             lower, upper = self.joint_limits[i]
             if self.joint_angles[i] < lower or self.joint_angles[i] > upper:
                 print(f"Warning: Joint {i+1} clamped "
-                      f"({np.degrees(self.joint_angles[i]):.1f}° → limit)")
+                      f"({self.joint_angles[i]} → {lower, upper})")
             self.joint_angles[i] = np.clip(self.joint_angles[i], lower, upper)
 
     # Mode toggles
@@ -105,46 +93,28 @@ class ArmState:
             % len(self._control_speed_factors)
         )
 
-    def cycle_replay_speed(self, direction: int):
-        """Cycle replay speed: ``+1`` = faster, ``-1`` = slower."""
-        self._replay_speed_index = (
-            (self._replay_speed_index + direction)
-            % len(self._replay_speeds)
+    def cycle_movement_speed(self, direction: int):
+        """Cycle movement speed: ``+1`` = faster, ``-1`` = slower."""
+        self._movement_speed_index = (
+            (self._movement_speed_index + direction)
+            % len(self._movement_speeds)
         )
 
     # Effector update
 
     def update_effector(self, delta: float):
-        """Dispatch effector update to the appropriate handler."""
-        if self.effector_name == "AGX_GRIPPER":
-            self._update_gripper(delta)
-        # elif self.effector_name == "REVO2":
-        #     self._update_revo2(delta)
-        else:
-            pass
+        """Update effector state based on input delta."""
+        self.effector.update(delta, self.get_control_speed_factor())
 
-    def _update_gripper(self, delta: float):
-        """Update gripper percentage. *delta* is typically ±1."""
-        self.gripper_state += (
-            delta * self.effector_step * self.get_control_speed_factor()
-        )
-        self.gripper_state = float(
-            np.clip(self.gripper_state, self.effector_min, self.effector_max)
-        )
-
-    def _update_revo2(self, delta: float):
-        # """TODO: 实现灵巧手控制逻辑"""
-        pass
-
-    # Effector state snapshot (for save/restore & display) 
+    # Effector state snapshot (for save/restore & display)
 
     def get_effector_state(self) -> dict:
         """Return a serialisable snapshot of current effector state."""
-        if self.effector_name == "AGX_GRIPPER":
-            return {"gripper": self.gripper_state}
-        # elif self.effector_name == "REVO2":
-        #     return {...}
-        return {}
+        return self.effector.get_state()
+
+    def _restore_effector_state(self, state: dict):
+        """Restore effector state from a snapshot dictionary."""
+        self.effector.restore_state(state)
 
     # Position saving / restoring
 
@@ -171,15 +141,6 @@ class ArmState:
 
     def toggle_replay_order(self):
         self.replay_reversed = not self.replay_reversed
-
-    def _restore_effector_state(self, state: dict):
-        """Restore effector state from a snapshot dictionary."""
-        if self.effector_name == "AGX_GRIPPER":
-            self.gripper_state = state.get("gripper", 0.0)
-        # elif self.effector_name == "REVO2":
-        #     ...
-        else:
-            pass
 
     def restore_next_position(self) -> bool:
         """Move to the next saved position. Returns ``True`` on success."""

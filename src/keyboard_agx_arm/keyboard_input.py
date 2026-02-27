@@ -31,7 +31,7 @@ class KeyboardInput:
     K_RESTORE = "3"
     K_REPLAY = "4"
     K_CONTROL_SPEED = "q"
-    K_REPLAY_SPEED = "e"
+    K_MOVEMENT_SPEED = "e"
 
     # Movement axis pairs: (negative_key, positive_key)
     AXIS_PAIRS = (
@@ -53,7 +53,7 @@ class KeyboardInput:
 
     # Action categories
     EDGE_ACTIONS = ("connect", "command", "home", "restore")
-    LONG_PRESS_ACTIONS = ("mode", "save", "replay", "control_speed", "replay_speed")
+    LONG_PRESS_ACTIONS = ("mode", "save", "replay", "control_speed", "movement_speed")
 
     # Initialize
     def __init__(self):
@@ -77,7 +77,7 @@ class KeyboardInput:
             "save": self.K_SAVE,
             "replay": self.K_REPLAY,
             "control_speed": self.K_CONTROL_SPEED,
-            "replay_speed": self.K_REPLAY_SPEED,
+            "movement_speed": self.K_MOVEMENT_SPEED,
         }
 
         # Start the global listener
@@ -115,25 +115,23 @@ class KeyboardInput:
         with self._lock:
             return key_id in self._pressed_keys
 
-    def axis(self, index: int) -> float:
+    def axis(self, index: int) -> int:
         """Return −1, 0, or +1 from the axis pair at *index*."""
         neg, pos = self.AXIS_PAIRS[index]
-        return float(self.is_pressed(pos)) - float(self.is_pressed(neg))
+        return self.is_pressed(pos) - self.is_pressed(neg)
 
-    def gripper_delta(self) -> float:
+    def gripper_delta(self) -> int:
         """Return −1 (close), 0, or +1 (open) for the gripper."""
-        return float(self.is_pressed(self.K_GRIP_OPEN)) - float(
-            self.is_pressed(self.K_GRIP_CLOSE)
-        )
+        return self.is_pressed(self.K_GRIP_OPEN) - self.is_pressed(self.K_GRIP_CLOSE)
     
-    def effector_delta(self, effector_name: str) -> float:
+    def effector_delta(self, effector_type: str) -> int:
         """Return −1 (close), 0, or +1 (open) for the effector."""
-        if effector_name == "AGX_GRIPPER":
+        if effector_type == "AGX_GRIPPER":
             return self.gripper_delta()
-        # elif effector_name == "REVO2":
+        # elif effector_type == "REVO2":
         #     return self.revo2_delta()
         else:
-            pass
+            return 0
 
     # Action polling
 

@@ -7,13 +7,13 @@ CMD_MODE_NORMAL = 0x00
 CMD_MODE_MIT    = 0xAD
 
 CONTROL_PARAMS = {
-    "joint_step_rad":            0.5 * np.pi / 180.0,   # rad per tick
+    "joint_step_rad":            np.radians(0.5),       # rad per tick
     "translation_step":          0.001,                 # m per tick
     "rotation_step":             0.5,                   # deg per tick
     "control_speed_factors":     [0.25, 0.5, 1.0],
     "control_speed_factor_index": 2,                    # default ×1.0
-    "replay_speeds":             [10, 20, 30, 40, 50, 60, 70, 80, 90, 100],
-    "replay_speed_index":        9,                     # default 100 %
+    "movement_speeds":           [10, 20, 30, 40, 50, 60, 70, 80, 90, 100],
+    "movement_speed_index":      9,                     # default 100 %
 }
 
 NO_EFFECTOR = {
@@ -36,10 +36,10 @@ _PIPER_BASE = {
     "urdf":                  "piper_description.urdf",
     "num_joints":            6,
     "target_link":           "link6",
-    "supported_effectors":   ["AGX_GRIPPER"],
-    "default_effector":      "AGX_GRIPPER",
+    "supported_effectors":   ["AGX_GRIPPER", "None"],
+    "default_effector":      "None",
     "supports_mit":          True,
-    "tcp_offset":            [0.0, 0.0, 0.14],
+    "tcp_offset":            [0.0, 0.0, 0.0],
     "direction": {
         "joint": (1, -1, 1, 1, 1, 1),
         "pose":  (1, 1, -1, 1, 1, 1),
@@ -51,8 +51,8 @@ _NERO_BASE = {
     "urdf":                  "nero_description.urdf",
     "num_joints":            7,
     "target_link":           "link7",
-    "supported_effectors":   [],
-    "default_effector":      None,
+    "supported_effectors":   ["None"],
+    "default_effector":      "None",
     "supports_mit":          False,
     "tcp_offset":            [0.0, 0.0, 0.0],
     "direction": {
@@ -64,12 +64,20 @@ _NERO_BASE = {
 # Unified Configuration for All Robotic Arms
 
 ROBOT_CONFIGS: Dict[str, dict] = {
-    "piper":   {**_PIPER_BASE},
-    "piper_h": {**_PIPER_BASE},
-    "piper_l": {**_PIPER_BASE},
+    "piper":   {**_PIPER_BASE,
+                "default_effector": "AGX_GRIPPER",
+                "tcp_offset": [0.0, 0.0, 0.14]},
+    "piper_h": {**_PIPER_BASE,
+                "desc_dir": "piper_h_description",
+                "urdf":     "piper_h_description.urdf"},
+    "piper_l": {**_PIPER_BASE,
+                "desc_dir": "piper_l_description",
+                "urdf":     "piper_l_description.urdf"},
     "piper_x": {**_PIPER_BASE,
                 "desc_dir": "piper_x_description",
-                "urdf":     "piper_x_description.urdf"},
+                "urdf":     "piper_x_description.urdf",
+                "default_effector": "AGX_GRIPPER",
+                "tcp_offset": [0.0, 0.0, 0.14]},
     "nero": {**_NERO_BASE},
 }
 
@@ -83,55 +91,50 @@ def _robot_description_base_path() -> str:
     )
 
 
-def get_robot_config(robot_type: str) -> dict:
-    """Return the full config dict for *robot_type*, or raise ValueError."""
-    cfg = ROBOT_CONFIGS.get(robot_type)
+def get_robot_config(arm_type: str) -> dict:
+    """Return the full config dict for *arm_type*, or raise ValueError."""
+    cfg = ROBOT_CONFIGS.get(arm_type)
     if cfg is None:
         raise ValueError(
-            f"Unsupported robot_type '{robot_type}'. "
+            f"Unsupported arm_type '{arm_type}'. "
             f"Supported: {list(ROBOT_CONFIGS.keys())}"
         )
     return cfg
 
 
-def get_robot_paths(robot_type: str) -> dict:
-    """Return resolved filesystem paths for *robot_type*."""
-    cfg = get_robot_config(robot_type)
+def get_robot_paths(arm_type: str) -> dict:
+    """Return resolved filesystem paths for *arm_type*."""
+    cfg = get_robot_config(arm_type)
     base = _robot_description_base_path()
     return {
-        "urdf_path":   os.path.join(base, cfg["desc_dir"], cfg["urdf"]),
+        "urdf_path":   os.path.join(base, cfg["desc_dir"], "urdf", cfg["urdf"]),
         "mesh_path":   os.path.join(base, cfg["desc_dir"], "meshes"),
         "target_link": cfg["target_link"],
     }
 
 
-def get_effector_params(effector_name: Optional[str]) -> dict:
+def get_effector_params(effector_type: Optional[str]) -> dict:
     """Look up effector params from the registry. Returns NO_EFFECTOR when *name* is None."""
-    if effector_name is None:
+    if effector_type == "None":
         return NO_EFFECTOR
-    params = EFFECTOR_REGISTRY.get(effector_name)
+    params = EFFECTOR_REGISTRY.get(effector_type)
     if params is None:
         raise ValueError(
-            f"Unknown effector '{effector_name}'. "
+            f"Unknown effector '{effector_type}'. "
             f"Registered: {list(EFFECTOR_REGISTRY.keys())}"
         )
     return params
 
 
-def resolve_effector(robot_type: str,
+def resolve_effector(arm_type: str,
                      effector_override: Optional[str] = None) -> tuple:
-    """Resolve the effector name and params for a robot.
-
-    Returns ``(effector_name, effector_params)``.
-    *effector_override* from CLI takes priority over robot default.
-    Validates that the effector is in the robot's supported list.
-    """
-    cfg = get_robot_config(robot_type)
-    eff_name = effector_override or cfg["default_effector"]
-
+    """Resolve the effector name and params for a robot."""
+    cfg = get_robot_config(arm_type)
+    eff_name = effector_override or cfg.get("default_effector")
+    print(f"Resolving effector for robot '{arm_type}' with override '{effector_override}' → '{eff_name}'")
     if eff_name is not None and eff_name not in cfg["supported_effectors"]:
         raise ValueError(
-            f"Effector '{eff_name}' is not supported by '{robot_type}'. "
+            f"Effector '{eff_name}' is not supported by '{arm_type}'. "
             f"Supported: {cfg['supported_effectors']}"
         )
     return eff_name, get_effector_params(eff_name)

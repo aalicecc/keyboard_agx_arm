@@ -20,23 +20,22 @@ class ArmController:
         mesh_path: str,
         root_name: str,
         target_link: str,
-        robot_type: str = "piper",
+        arm_type: str = "piper",
         ik_backend: str = "trac_ik",
         effector_type: str = None,
     ):
         # Robot configuration
-        cfg  = get_robot_config(robot_type)
+        cfg  = get_robot_config(arm_type)
         dirs = cfg["direction"]
 
-        # Resolve effector (CLI override > robot default > NO_EFFECTOR)
-        self.effector_name, effector_params = resolve_effector(
-            robot_type, effector_type)
+        # Resolve effector
+        self.effector_type, effector_params = resolve_effector(
+            arm_type, effector_type)
 
-        self.robot_type           = robot_type
-        self.num_joints           = cfg["num_joints"]
-        self.effector_urdf_joints = effector_params["effector_joints"]
-        self.joint_dirs           = dirs["joint"]
-        self.pose_dirs            = dirs["pose"]
+        self.arm_type = arm_type
+        self.num_joints = cfg["num_joints"]
+        self.joint_dirs = dirs["joint"]
+        self.pose_dirs  = dirs["pose"]
 
         # Composable components
         self.input = KeyboardInput()
@@ -49,7 +48,7 @@ class ArmController:
         self.state = ArmState(
             self.num_joints,
             self.kinematic.joint_limits,
-            effector_name=self.effector_name,
+            effector_type=self.effector_type,
             effector_params=effector_params,
         )
         self.tcp = TcpOffset()
@@ -63,18 +62,18 @@ class ArmController:
             "restore": self._restore_position,
         }
         self._short_handlers = {
-            "mode":          self.state.toggle_up_level_mode,
-            "save":          self.state.save_position,
-            "replay":        self.state.toggle_replay_order,
-            "control_speed": lambda: self.state.cycle_control_speed_factor(+1),
-            "replay_speed":  lambda: self.state.cycle_replay_speed(+1),
+            "mode":           self.state.toggle_up_level_mode,
+            "save":           self.state.save_position,
+            "replay":         self.state.toggle_replay_order,
+            "control_speed":  lambda: self.state.cycle_control_speed_factor(+1),
+            "movement_speed": lambda: self.state.cycle_movement_speed(+1),
         }
         self._long_handlers = {
-            "mode":          self.state.toggle_low_level_mode,
-            "save":          self.state.clear_current_position,
-            "replay":        self.state.clear_all_positions,
-            "control_speed": lambda: self.state.cycle_control_speed_factor(-1),
-            "replay_speed":  lambda: self.state.cycle_replay_speed(-1),
+            "mode":           self.state.toggle_low_level_mode,
+            "save":           self.state.clear_current_position,
+            "replay":         self.state.clear_all_positions,
+            "control_speed":  lambda: self.state.cycle_control_speed_factor(-1),
+            "movement_speed": lambda: self.state.cycle_movement_speed(-1),
         }
 
         # Compute initial forward kinematics
@@ -87,26 +86,33 @@ class ArmController:
         self._forward_kinematics()
 
     # Kinematics helpers
-    def _store_end_pose(self, xyz: np.ndarray, rot: R):
-        """Store end pose into state.xyz_wxyz / state.xyz_rpy."""
-        self.state.xyz_wxyz = np.concatenate(
+    def _store_tcp_pose(self, xyz: np.ndarray, rot: R):
+        """Store tool-tip pose into state.tcp_xyz_wxyz / state.tcp_xyz_rpy."""
+        self.state.tcp_xyz_wxyz = np.concatenate(
             (xyz, xyzw_to_wxyz(rot.as_quat())))
-        self.state.xyz_rpy = np.concatenate(
+        self.state.tcp_xyz_rpy = np.concatenate(
             (xyz, rot.as_euler("xyz", degrees=True)))
 
+    def _store_flange_pose(self, link_xyz: np.ndarray, link_rot: R):
+        """Store flange (link) pose into state.flange_xyz_rpy."""
+        self.state.flange_xyz_rpy = np.concatenate(
+            (link_xyz, link_rot.as_euler("xyz", degrees=True)))
+
     def _forward_kinematics(self):
-        """Run FK, apply TCP offset, store result in *state*."""
+        """Run FK, apply TCP offset, store flange + tool-tip poses."""
         try:
             link_xyz, link_rot = self.kinematic.solve_fk(self.state.joint_angles)
-            tool_xyz, tool_rot = self.tcp.apply(link_xyz, link_rot)
-            self._store_end_pose(tool_xyz, tool_rot)
+            self._store_flange_pose(link_xyz, link_rot)
+            tcp_xyz, tcp_rot = self.tcp.apply(link_xyz, link_rot)
+            self._store_tcp_pose(tcp_xyz, tcp_rot)
         except Exception as e:
             print(f"FK error: {e}")
-            self.state.xyz_wxyz = np.zeros(7)
-            self.state.xyz_rpy  = np.zeros(6)
+            self.state.tcp_xyz_wxyz   = np.zeros(7)
+            self.state.tcp_xyz_rpy    = np.zeros(6)
+            self.state.flange_xyz_rpy = np.zeros(6)
 
     def _inverse_kinematics(self, target_xyz, target_rot: R):
-        """Run IK (with TCP removal), store result in *state*."""
+        """Run IK (with TCP removal), store flange + tool-tip poses."""
         try:
             link_xyz, link_rot = self.tcp.remove(
                 np.asarray(target_xyz, float), target_rot)
@@ -114,7 +120,8 @@ class ArmController:
                 link_xyz, link_rot, self.state.joint_angles)
             if result is not None:
                 self.state.joint_angles = np.array(result[: self.num_joints])
-                self._store_end_pose(target_xyz, target_rot)
+                self._store_flange_pose(link_xyz, link_rot)
+                self._store_tcp_pose(target_xyz, target_rot)
             else:
                 print("IK not found — keeping current configuration")
         except Exception as e:
@@ -122,13 +129,14 @@ class ArmController:
 
     # Visualization
     def _update_visualization(self):
-        gripper_pct   = getattr(self.state, "gripper_state", 0.0)
-        gripper_width = getattr(self.state, "gripper_max_width", 0.0)
+        effector_pct, effector_max_width, effector_urdf_joints = (
+            self.state.effector.get_viz_params()
+        )
         self.visualizer.update(
             self.state.joint_angles,
-            gripper_pct,
-            gripper_width,
-            self.effector_urdf_joints,
+            effector_pct,
+            effector_max_width,
+            effector_urdf_joints,
         )
 
     # Continuous movement (called every tick)
@@ -159,8 +167,8 @@ class ArmController:
         if not (np.any(d_local) or np.any(r_local)):
             return
 
-        pos = self.state.xyz_wxyz[:3]
-        rot = R.from_quat(wxyz_to_xyzw(self.state.xyz_wxyz[3:]))
+        pos = self.state.tcp_xyz_wxyz[:3]
+        rot = R.from_quat(wxyz_to_xyzw(self.state.tcp_xyz_wxyz[3:]))
         new_rot = rot * R.from_euler("xyz", r_local, degrees=True)
         new_pos = pos + rot.apply(d_local)
         self._inverse_kinematics(new_pos, new_rot)
@@ -168,7 +176,7 @@ class ArmController:
 
     def _update_effector(self):
         """Adjust effector from keyboard."""
-        delta = self.input.effector_delta(self.effector_name)
+        delta = self.input.effector_delta(self.effector_type)
         if delta:
             self.state.update_effector(delta)
             self._update_visualization()
@@ -240,13 +248,13 @@ class ArmController:
     def get_state(self) -> dict:
         s = self.state
         info = {
-            "robot_type":           self.robot_type,
+            "arm_type":             self.arm_type,
             "num_joints":           self.num_joints,
-            "effector_name":        self.effector_name,
+            "effector_type":        self.effector_type,
             "joints":               s.joint_angles.copy(),
-            "xyz_rpy":              s.xyz_rpy.copy(),
+            "tcp_xyz_rpy":          s.tcp_xyz_rpy.copy(),
             "control_speed_factor": s.get_control_speed_factor(),
-            "replay_speed":         s.get_replay_speed(),
+            "movement_speed":       s.get_movement_speed(),
             "arm_connected":        s.arm_connected,
             "arm_enabled":          s.arm_enabled,
             "command_mode":         s.command_mode,
@@ -269,23 +277,18 @@ class ArmController:
         idx    = f"#{s.position_index + 1}" if s.saved_positions else "None"
         order  = "Reversed" if s.replay_reversed else "Sequential"
 
-        print(f"=== Keyboard Arm Control ({self.robot_type}) ===")
+        print(f"=== Keyboard Arm Control ({self.arm_type}) ===")
         print(f"Joints (deg): {[f'{np.degrees(a):6.1f}' for a in s.joint_angles]}")
-        print(f"End pose:     {[f'{v:7.3f}' for v in s.xyz_rpy]}")
+        print(f"End pose:     {[f'{v:7.3f}' for v in s.tcp_xyz_rpy]}")
 
         # Effector status
-        if self.effector_name == "AGX_GRIPPER":
-            print(f"Gripper:      {s.gripper_state:5.1f}%")
-        # elif self.effector_name == "REVO2":
-        #     print(f"REVO2:        (stub)")
-        else:
-            print(f"Effector:     None")
+        print(self.state.effector.get_status_text())
 
         print(f"Command mode: 0x{s.command_mode:02X}")
         print(f"Up mode:      {s.up_level_mode}")
         print(f"Low mode:     {s.low_level_mode}")
         print(f"Control speed factor: ×{s.get_control_speed_factor()}")
-        print(f"Replay speed: {s.get_replay_speed()}%")
+        print(f"Movement speed: {s.get_movement_speed()}%")
         print(f"Arm status:   {arm_st} / {en_st}")
         print(f"Replay:       {order}")
         print(f"Saved pos:    {len(s.saved_positions)}  current: {idx}")
@@ -301,7 +304,7 @@ class ArmController:
         print("3           Restore pos")
         print("4           Toggle order  /  Clear all (long)")
         print("Q           Control speed +  /  Control speed − (long)")
-        print("E           Replay speed +  /  Replay speed − (long)")
+        print("E           Movement speed + / Movement speed − (long)")
         print()
         print("── Movement Keys ─────────────────────────")
         print("        Joint mode       Pose mode")
@@ -313,10 +316,8 @@ class ArmController:
         print("I/K     J6               Yaw")
         if self.num_joints >= 7:
             print("O/L     J7               (reserved)")
-        if self.effector_name == "AGX_GRIPPER":
-            print("F/G     Gripper −/+      Gripper −/+")
-        elif self.effector_name is not None:
-            pass
+        for line in self.state.effector.get_key_guide():
+            print(line)
 
     # Cleanup
     def stop(self):

@@ -67,7 +67,13 @@ class Visualizer:
                 daemon=True,
             )
             self._process.start()
-        except Exception:
+        except Exception as e:
+            print(f"[Visualizer] Failed to initialize visualization: {e}")
+            print(f"[Visualizer] URDF path: {urdf_path}")
+            print(f"[Visualizer] Mesh path: {mesh_path}")
+            print(f"[Visualizer] Root name: {root_name}")
+            import traceback
+            traceback.print_exc()
             self._process = None
 
     # Public API
