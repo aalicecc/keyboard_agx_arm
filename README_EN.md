@@ -109,6 +109,7 @@ Control robotic arms (PiPER series, Nero, etc.) via keyboard in terminal/SSH env
 > - **`arm_type`**: Robotic arm model, example value `piper`.
 > - **`channel`**: CAN port connected to the robotic arm, example value `can0`.
 > - **`effector_type`**: End-effector type, example value `None` or `AGX_GRIPPER`.
+> - **`ik_backend`**: Kinematics module, example values `trac_ik` or `curobo`.
 >
 > Note: Before use, you need to select a URDF file matching the robotic arm and end-effector in [robot_config](./cfg/robot_config.py), otherwise Viser web 3D visualization will not work.
 >
@@ -129,7 +130,7 @@ Control robotic arms (PiPER series, Nero, etc.) via keyboard in terminal/SSH env
 2. **Start control**:
 
    ```bash
-   python3 main_keyboard.py --arm_type piper --channel can0 --effector_type AGX_GRIPPER
+   python3 main_keyboard.py --arm_type piper --channel can0 --effector_type AGX_GRIPPER --ik_backend trac_ik
    ```
 
 3. **Web visualization**: Open a browser and visit `http://localhost:8080` to view the robotic arm 3D status

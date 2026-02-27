@@ -110,6 +110,7 @@
 > - **`arm_type`**：机械臂的型号，示例值 `piper`。
 > - **`channel`**：机械臂连接的 CAN 端口，示例值 `can0`。
 > - **`effector_type`**：末端执行器类型，示例值 `None` 或 `AGX_GRIPPER`。
+> - **`ik_backend`**：运动学模块，示例值 `trac_ik` 或 `curobo`。
 >
 > 注意：使用前，需要在 [robot_config](./cfg/robot_config.py) 选择匹配该机械臂和末端执行器的URDF文件，否则无法在 Viser 网页 3D 可视化。
 >
@@ -130,7 +131,7 @@
 2. **启动控制**：
 
    ```bash
-   python3 main_keyboard.py --arm_type piper --channel can0 --effector_type AGX_GRIPPER
+   python3 main_keyboard.py --arm_type piper --channel can0 --effector_type AGX_GRIPPER --ik_backend trac_ik
    ```
 
 3. **网页可视化**：打开浏览器访问 `http://localhost:8080` 查看机械臂 3D 状态

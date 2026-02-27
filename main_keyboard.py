@@ -166,7 +166,7 @@ class PhysicalArmController(ArmController):
     # def _send_revo2_hw(self):
     #     pass
 
-def main(arm_type="piper", channel="can0", effector_type=None):
+def main(arm_type="piper", channel="can0", effector_type=None, ik_backend="trac_ik"):
     paths = get_robot_paths(arm_type)
     cfg = get_robot_config(arm_type)
 
@@ -176,7 +176,7 @@ def main(arm_type="piper", channel="can0", effector_type=None):
         root_name="/base_link",
         target_link=paths["target_link"],
         arm_type=arm_type,
-        ik_backend="trac_ik",
+        ik_backend=ik_backend,
         channel=channel,
         effector_type=effector_type,
     )
@@ -205,10 +205,11 @@ if __name__ == "__main__":
                         choices=list(ROBOT_CONFIGS.keys()))
     parser.add_argument("--channel", default="can0")
     parser.add_argument("--effector_type", default=None)
+    parser.add_argument("--ik_backend", default="trac_ik")
     parser.add_argument("--setup-can", action="store_true")
     args = parser.parse_args()
 
     if args.setup_can:
         os.system(f"sudo ip link set {args.channel} up type can bitrate 1000000")
 
-    main(arm_type=args.arm_type, channel=args.channel, effector_type=args.effector_type)
+    main(arm_type=args.arm_type, channel=args.channel, effector_type=args.effector_type, ik_backend=args.ik_backend)
