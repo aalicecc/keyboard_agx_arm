@@ -36,11 +36,11 @@ class PhysicalArmController(ArmController):
 
     def _init_hw_effector(self):
         """Initialise the hardware end-effector based on resolved name."""
-        if self.effector_type == "None":
+        if self.effector_type == "none":
             self.end_effector = None
             return
         eff_const = getattr(
-            self.hw_robot.OPTIONS.EFFECTOR, self.effector_type, None)
+            self.hw_robot.OPTIONS.EFFECTOR, self.effector_type.upper(), None)
         if eff_const is None:
             raise ValueError(
                 f"Hardware does not support effector '{self.effector_type}'")
@@ -108,7 +108,7 @@ class PhysicalArmController(ArmController):
         """Gracefully disable the hardware effector on disconnect."""
         if self.end_effector is None:
             return
-        if self.effector_type == "AGX_GRIPPER":
+        if self.effector_type == "agx_gripper":
             try:
                 self.end_effector.disable_gripper()
             except AttributeError:
@@ -145,14 +145,14 @@ class PhysicalArmController(ArmController):
 
     def _send_effector_command(self):
         """Dispatch effector command to the matching hardware method."""
-        if self.effector_type == "AGX_GRIPPER":
+        if self.effector_type == "agx_gripper":
             self._send_gripper_hw()
         # elif self.effector_type == "REVO2":
         #     self._send_revo2_hw()
 
     def _send_gripper_hw(self):
         """Convert gripper percentage to metres and send."""
-        if self.effector_type != "AGX_GRIPPER":
+        if self.effector_type != "agx_gripper":
             return
         # Access gripper-specific attributes from effector_type object
         gripper_state = getattr(self.state.effector, "gripper_state", 0.0)
@@ -212,4 +212,9 @@ if __name__ == "__main__":
     if args.setup_can:
         os.system(f"sudo ip link set {args.channel} up type can bitrate 1000000")
 
-    main(arm_type=args.arm_type, channel=args.channel, effector_type=args.effector_type, ik_backend=args.ik_backend)
+    main(
+        arm_type=args.arm_type,
+        channel=args.channel,
+        effector_type=args.effector_type,
+        ik_backend=args.ik_backend,
+    )

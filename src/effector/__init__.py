@@ -9,7 +9,7 @@ def create_effector_state(
     effector_params: dict
 ) -> EffectorStateBase:
     """Create effector state object based on type."""
-    if effector_type == "AGX_GRIPPER":
+    if effector_type == "agx_gripper":
         return AgxGripperState(effector_params)
     # elif effector_type == "REVO2":
     #     return Revo2State(effector_params)

@@ -126,7 +126,7 @@ class KeyboardInput:
     
     def effector_delta(self, effector_type: str) -> int:
         """Return −1 (close), 0, or +1 (open) for the effector."""
-        if effector_type == "AGX_GRIPPER":
+        if effector_type == "agx_gripper":
             return self.gripper_delta()
         # elif effector_type == "REVO2":
         #     return self.revo2_delta()

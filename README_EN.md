@@ -13,22 +13,18 @@ Control robotic arms (PiPER series, Nero, etc.) via keyboard in terminal/SSH env
 
 ## Installation
 
-1. Install the robotic arm Python SDK:
+1. Clone the project and navigate to the project root:
 
    ```bash
-   git clone https://github.com/agilexrobotics/pyAgxArm.git
-   cd pyAgxArm
-   pip3 install .
+   git clone --recurse-submodules https://github.com/aalicecc/keyboard_agx_arm.git
+   cd keyboard_agx_arm
    ```
-
-2. Clone the project and navigate to the project root:
 
    ```bash
-   git clone https://github.com/kehuanjack/Gamepad_PiPER.git
-   cd Gamepad_PiPER
+   git submodule update --remote --recursive
    ```
 
-3. Install common dependencies and kinematic module dependencies (choose one, pytracik is recommended):
+2. Install common dependencies and kinematic module dependencies (choose one, pytracik is recommended):
 
    - Based on [pinocchio](https://github.com/stack-of-tasks/pinocchio) library (Python == 3.9):
 
@@ -36,9 +32,15 @@ Control robotic arms (PiPER series, Nero, etc.) via keyboard in terminal/SSH env
       conda create -n test_pinocchio python=3.9.* -y
       conda activate test_pinocchio
       pip3 install -r requirements_common.txt --upgrade
+      mkdir -p 3rdparty && cd 3rdparty
+      git clone https://github.com/agilexrobotics/pyAgxArm.git
+      cd pyAgxArm
+      pip3 install .
+      cd ../..
       conda install pinocchio=3.6.0 -c conda-forge
       pip3 install meshcat
       pip3 install casadi
+      pip3 install xacrodoc
       ```
 
    - Based on [PyRoKi](https://github.com/chungmin99/pyroki) library (Python >= 3.10):
@@ -47,21 +49,33 @@ Control robotic arms (PiPER series, Nero, etc.) via keyboard in terminal/SSH env
       conda create -n test_pyroki python=3.10.* -y
       conda activate test_pyroki
       pip3 install -r requirements_common.txt --upgrade
+      mkdir -p 3rdparty && cd 3rdparty
+      git clone https://github.com/agilexrobotics/pyAgxArm.git
+      cd pyAgxArm
+      pip3 install .
+      cd ../..
       pip3 install pyroki@git+https://github.com/chungmin99/pyroki.git@f234516
       ```
 
-   - Based on [cuRobo](https://github.com/NVlabs/curobo) library (Python >= 3.8, recommended CUDA version 11.8):
+   - Based on [cuRobo](https://github.com/NVlabs/curobo) library (Python >= 3.8):
+
+      > Note: cuRobo requires a CUDA environment. CUDA 11.8 is recommended, as other versions may have compatibility issues with PyTorch.
 
       ```bash
       conda create -n test_curobo python=3.10.* -y
       conda activate test_curobo
       pip3 install -r requirements_common.txt --upgrade
-      sudo apt install git-lfs && cd ../
+      mkdir -p 3rdparty && cd 3rdparty
+      git clone https://github.com/agilexrobotics/pyAgxArm.git
+      cd pyAgxArm
+      pip3 install .
+      cd ..
+      sudo apt install git-lfs
       git clone https://github.com/NVlabs/curobo.git && cd curobo
-      pip3 install "numpy<2.0" "torch==2.0.0" pytest lark
+      pip3 install "numpy<2.0" "torch==2.0.0" pytest lark PyYAML
       pip3 install -e . --no-build-isolation
       python3 -m pytest .
-      cd ../Gamepad_PiPER
+      cd ../..
       ```
 
    - Based on [pytracik](https://github.com/chenhaox/pytracik) library (Python >= 3.10):
@@ -70,11 +84,17 @@ Control robotic arms (PiPER series, Nero, etc.) via keyboard in terminal/SSH env
       conda create -n test_tracik python=3.10.* -y
       conda activate test_tracik
       pip3 install -r requirements_common.txt --upgrade
+      mkdir -p 3rdparty && cd 3rdparty
+      git clone https://github.com/agilexrobotics/pyAgxArm.git
+      cd pyAgxArm
+      pip3 install .
+      cd ..
       git clone https://github.com/chenhaox/pytracik.git
       cd pytracik
       pip install -r requirements.txt
-      sudo apt install g++ libboost-all-dev libeigen3-dev liborocos-kdl-dev libnlopt-dev libnlopt-cxx-dev
+      sudo apt install -y g++ libboost-all-dev libeigen3-dev liborocos-kdl-dev libnlopt-dev libnlopt-cxx-dev
       python setup_linux.py install --user
+      cd ../..
       ```
 
 ## Usage
@@ -84,7 +104,10 @@ Control robotic arms (PiPER series, Nero, etc.) via keyboard in terminal/SSH env
 > **Important: Read Before Starting**
 > The parameters in the following startup commands **must** be replaced according to your selected **URDF configuration**:
 > - **`arm_type`**: Robotic arm model, example value `piper`.
-> - **`effector_type`**: End-effector type, example value `None` or `AGX_GRIPPER`.
+> - **`effector_type`**: End-effector type, example value `none` or `agx_gripper`.
+> - **`ik_backend`**: Kinematics module, example values `trac_ik` or `curobo`.
+>
+> For complete parameter descriptions, default values, and options, see **[Startup Parameters](#startup-parameters)** below.
 >
 > Note: Before use, you need to select a URDF file matching the robotic arm and end-effector in [robot_config](./cfg/robot_config.py), otherwise Viser web 3D visualization will not work.
 >
@@ -99,7 +122,7 @@ Control robotic arms (PiPER series, Nero, etc.) via keyboard in terminal/SSH env
 2. Start with selected end-effector:
 
    ```bash
-   python3 main_keyboard_virtual.py --arm_type piper --effector_type AGX_GRIPPER
+   python3 main_keyboard_virtual.py --arm_type piper --effector_type agx_gripper
    ```
 
 ### Control Physical Robotic Arm
@@ -108,8 +131,10 @@ Control robotic arms (PiPER series, Nero, etc.) via keyboard in terminal/SSH env
 > The parameters in the following startup commands **must** be replaced according to your selected **physical hardware configuration**:
 > - **`arm_type`**: Robotic arm model, example value `piper`.
 > - **`channel`**: CAN port connected to the robotic arm, example value `can0`.
-> - **`effector_type`**: End-effector type, example value `None` or `AGX_GRIPPER`.
+> - **`effector_type`**: End-effector type, example value `none` or `agx_gripper`.
 > - **`ik_backend`**: Kinematics module, example values `trac_ik` or `curobo`.
+>
+> For complete parameter descriptions, default values, and options, see **[Startup Parameters](#startup-parameters)** below.
 >
 > Note: Before use, you need to select a URDF file matching the robotic arm and end-effector in [robot_config](./cfg/robot_config.py), otherwise Viser web 3D visualization will not work.
 >
@@ -117,11 +142,18 @@ Control robotic arms (PiPER series, Nero, etc.) via keyboard in terminal/SSH env
 
 1. **Activate CAN module**:
 
+   CAN module must be activated before use. For details, see: [CAN Configuration Guide](./docs/CAN_USER_EN.md)
+
+   When only a single CAN module is connected to the computer, you can **quickly complete activation** through the following steps:
+
+   Open a terminal window and execute the following command:
+
    ```bash
-   sudo ip link set can0 up type can bitrate 1000000
+   cd ~/keyboard_agx_arm/scripts
+   bash can_activate.sh
    ```
 
-   Or use the built-in parameter:
+   Or use the built-in parameter `--setup-can` :
 
    ```bash
    python3 main_keyboard.py --arm_type piper --channel can0 --setup-can
@@ -130,10 +162,19 @@ Control robotic arms (PiPER series, Nero, etc.) via keyboard in terminal/SSH env
 2. **Start control**:
 
    ```bash
-   python3 main_keyboard.py --arm_type piper --channel can0 --effector_type AGX_GRIPPER --ik_backend trac_ik
+   python3 main_keyboard.py --arm_type piper --channel can0 --effector_type agx_gripper --ik_backend trac_ik
    ```
 
 3. **Web visualization**: Open a browser and visit `http://localhost:8080` to view the robotic arm 3D status
+
+### Startup Parameters
+
+| Parameter | Default | Description | Options |
+|-----------|---------|-------------|---------|
+| `arm_type` | `piper` | Robotic arm model | `piper`, `piper_h`, `piper_l`, `piper_x`, `nero` |
+| `channel` | `can0` | CAN port | - |
+| `effector_type` | `none` or `agx_gripper` | End-effector type | `none`, `agx_gripper` |
+| `ik_backend` | `trac_ik` | Forward/inverse kinematics solver | `trac_ik`, `curobo`, `pinocchio`, `pyroki_limit`, `pyroki_no_limit` |
 
 ## Keyboard Control Guide
 

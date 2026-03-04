@@ -22,7 +22,7 @@ NO_EFFECTOR = {
 }
 
 EFFECTOR_REGISTRY: Dict[str, dict] = {
-    "AGX_GRIPPER": {
+    "agx_gripper": {
         "effector_joints":   2,
         "effector_step":     1.0,   # % per tick
         "gripper_max_width": 0.07,  # metres
@@ -36,8 +36,8 @@ _PIPER_BASE = {
     "urdf":                  "piper_description.urdf",
     "num_joints":            6,
     "target_link":           "link6",
-    "supported_effectors":   ["AGX_GRIPPER", "None"],
-    "default_effector":      "None",
+    "supported_effectors":   ["agx_gripper", "none"],
+    "default_effector":      "none",
     "supports_mit":          True,
     "tcp_offset":            [0.0, 0.0, 0.0],
     "direction": {
@@ -51,8 +51,8 @@ _NERO_BASE = {
     "urdf":                  "nero_description.urdf",
     "num_joints":            7,
     "target_link":           "link7",
-    "supported_effectors":   ["None"],
-    "default_effector":      "None",
+    "supported_effectors":   ["none"],
+    "default_effector":      "none",
     "supports_mit":          False,
     "tcp_offset":            [0.0, 0.0, 0.0],
     "direction": {
@@ -65,7 +65,7 @@ _NERO_BASE = {
 
 ROBOT_CONFIGS: Dict[str, dict] = {
     "piper":   {**_PIPER_BASE,
-                "default_effector": "AGX_GRIPPER",
+                "default_effector": "agx_gripper",
                 "tcp_offset": [0.0, 0.0, 0.14]},
     "piper_h": {**_PIPER_BASE,
                 "desc_dir": "piper_h_description",
@@ -76,7 +76,7 @@ ROBOT_CONFIGS: Dict[str, dict] = {
     "piper_x": {**_PIPER_BASE,
                 "desc_dir": "piper_x_description",
                 "urdf":     "piper_x_description.urdf",
-                "default_effector": "AGX_GRIPPER",
+                "default_effector": "agx_gripper",
                 "tcp_offset": [0.0, 0.0, 0.14]},
     "nero": {**_NERO_BASE},
 }
@@ -87,7 +87,7 @@ def _robot_description_base_path() -> str:
     """Return the absolute path to the ``robot_description/`` directory."""
     return os.path.join(
         os.path.dirname(os.path.dirname(os.path.realpath(__file__))),
-        "robot_description",
+        "agx_arm_robot_description",
     )
 
 
@@ -106,16 +106,21 @@ def get_robot_paths(arm_type: str) -> dict:
     """Return resolved filesystem paths for *arm_type*."""
     cfg = get_robot_config(arm_type)
     base = _robot_description_base_path()
+    
+    prefix = "piper" if "piper" in  cfg["desc_dir"].lower() else "nero"
+    urdf_path = os.path.join(base, f"{prefix}_description", cfg["desc_dir"], "urdf", cfg["urdf"])
+    mesh_path = os.path.join(base, f"{prefix}_description", cfg["desc_dir"], "meshes")
+
     return {
-        "urdf_path":   os.path.join(base, cfg["desc_dir"], "urdf", cfg["urdf"]),
-        "mesh_path":   os.path.join(base, cfg["desc_dir"], "meshes"),
+        "urdf_path":   urdf_path,
+        "mesh_path":   mesh_path,
         "target_link": cfg["target_link"],
     }
 
 
 def get_effector_params(effector_type: Optional[str]) -> dict:
     """Look up effector params from the registry. Returns NO_EFFECTOR when *name* is None."""
-    if effector_type == "None":
+    if effector_type == "none":
         return NO_EFFECTOR
     params = EFFECTOR_REGISTRY.get(effector_type)
     if params is None:

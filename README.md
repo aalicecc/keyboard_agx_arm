@@ -13,22 +13,18 @@
 
 ## 安装：
 
-1. 安装机械臂Python SDK
+1. 克隆本项目并切换至项目根目录下：
 
    ```bash
-   git clone https://github.com/agilexrobotics/pyAgxArm.git
-   cd pyAgxArm
-   pip3 install .
+   git clone --recurse-submodules https://github.com/aalicecc/keyboard_agx_arm.git
+   cd keyboard_agx_arm
    ```
-
-2. 克隆本项目并切换至项目根目录下：
 
    ```bash
-   git clone https://github.com/kehuanjack/Gamepad_PiPER.git
-   cd Gamepad_PiPER
+   git submodule update --remote --recursive
    ```
 
-3. 安装通用的依赖库和运动学模块的依赖库（任选其一，推荐使用pytracik库）：
+2. 安装通用的依赖库和运动学模块的依赖库（任选其一，推荐使用pytracik库）：
 
    - 基于[pinocchio](https://github.com/stack-of-tasks/pinocchio)库（Python == 3.9）：
 
@@ -36,9 +32,15 @@
       conda create -n test_pinocchio python=3.9.* -y
       conda activate test_pinocchio
       pip3 install -r requirements_common.txt --upgrade
+      mkdir -p 3rdparty && cd 3rdparty
+      git clone https://github.com/agilexrobotics/pyAgxArm.git
+      cd pyAgxArm
+      pip3 install .
+      cd ../..
       conda install pinocchio=3.6.0 -c conda-forge
       pip3 install meshcat
       pip3 install casadi
+      pip3 install xacrodoc
       ```
 
    - 基于[PyRoKi](https://github.com/chungmin99/pyroki)库（Python >= 3.10）:
@@ -47,21 +49,33 @@
       conda create -n test_pyroki python=3.10.* -y
       conda activate test_pyroki
       pip3 install -r requirements_common.txt --upgrade
+      mkdir -p 3rdparty && cd 3rdparty
+      git clone https://github.com/agilexrobotics/pyAgxArm.git
+      cd pyAgxArm
+      pip3 install .
+      cd ../..
       pip3 install pyroki@git+https://github.com/chungmin99/pyroki.git@f234516
       ```
 
-   - 基于[cuRobo](https://github.com/NVlabs/curobo)库（Python >= 3.8，推荐的CUDA版本为11.8）:
+   - 基于[cuRobo](https://github.com/NVlabs/curobo)库（Python >= 3.8）:
+
+      > 注意： cuRobo 依赖 CUDA 环境。推荐 CUDA 11.8，其他版本可能与 PyTorch 存在兼容性问题。
 
       ```bash
       conda create -n test_curobo python=3.10.* -y
       conda activate test_curobo
       pip3 install -r requirements_common.txt --upgrade
-      sudo apt install git-lfs && cd ../
+      mkdir -p 3rdparty && cd 3rdparty
+      git clone https://github.com/agilexrobotics/pyAgxArm.git
+      cd pyAgxArm
+      pip3 install .
+      cd ..
+      sudo apt install git-lfs
       git clone https://github.com/NVlabs/curobo.git && cd curobo
-      pip3 install "numpy<2.0" "torch==2.0.0" pytest lark
+      pip3 install "numpy<2.0" "torch==2.0.0" pytest lark PyYAML
       pip3 install -e . --no-build-isolation
       python3 -m pytest .
-      cd ../Gamepad_PiPER
+      cd ../..
       ```
 
    - 基于[pytracik](https://github.com/chenhaox/pytracik)库（Python >= 3.10）:
@@ -70,11 +84,17 @@
       conda create -n test_tracik python=3.10.* -y
       conda activate test_tracik
       pip3 install -r requirements_common.txt --upgrade
+      mkdir -p 3rdparty && cd 3rdparty
+      git clone https://github.com/agilexrobotics/pyAgxArm.git
+      cd pyAgxArm
+      pip3 install .
+      cd ..
       git clone https://github.com/chenhaox/pytracik.git
       cd pytracik
       pip install -r requirements.txt
-      sudo apt install g++ libboost-all-dev libeigen3-dev liborocos-kdl-dev libnlopt-dev libnlopt-cxx-dev
+      sudo apt install -y g++ libboost-all-dev libeigen3-dev liborocos-kdl-dev libnlopt-dev libnlopt-cxx-dev
       python setup_linux.py install --user
+      cd ../..
       ```
 
       
@@ -85,7 +105,10 @@
 > **重要提示：启动前必读**
 > 以下启动命令中的参数**必须**根据您的选择的**URDF配置**进行替换：
 > - **`arm_type`**：机械臂的型号，示例值 `piper`。
-> - **`effector_type`**：末端执行器类型，示例值 `None` 或 `AGX_GRIPPER`。
+> - **`effector_type`**：末端执行器类型，示例值 `none` 或 `agx_gripper`。
+> - **`ik_backend`**：运动学模块，示例值 `trac_ik` 或 `curobo`。
+>
+> 所有参数的完整说明、默认值及可选值，请参阅下方的 **[启动参数](#启动参数)** 。
 >
 > 注意：使用前，需要在 [robot_config](./cfg/robot_config.py) 选择匹配该机械臂和末端执行器的URDF文件，否则无法在 Viser 网页 3D 可视化。
 >
@@ -100,7 +123,7 @@
 2. 使用指定末端执行器启动
 
    ```bash
-   python3 main_keyboard_virtual.py --arm_type piper --effector_type AGX_GRIPPER
+   python3 main_keyboard_virtual.py --arm_type piper --effector_type agx_gripper
    ```
 
 ### 控制真实机械臂
@@ -109,8 +132,10 @@
 > 以下启动命令中的参数**必须**根据您的选择的**实际硬件配置**进行替换：
 > - **`arm_type`**：机械臂的型号，示例值 `piper`。
 > - **`channel`**：机械臂连接的 CAN 端口，示例值 `can0`。
-> - **`effector_type`**：末端执行器类型，示例值 `None` 或 `AGX_GRIPPER`。
+> - **`effector_type`**：末端执行器类型，示例值 `none` 或 `agx_gripper`。
 > - **`ik_backend`**：运动学模块，示例值 `trac_ik` 或 `curobo`。
+>
+> 所有参数的完整说明、默认值及可选值，请参阅下方的 **[启动参数](#启动参数)** 。
 >
 > 注意：使用前，需要在 [robot_config](./cfg/robot_config.py) 选择匹配该机械臂和末端执行器的URDF文件，否则无法在 Viser 网页 3D 可视化。
 >
@@ -118,11 +143,18 @@
 
 1. **激活 CAN 模块**：
 
+   使用前需先激活 CAN 模块，详见：[CAN 配置指南](./docs/CAN_USER.md)
+
+   当电脑仅连接单个 CAN 模块时，可通过以下步骤**快速完成激活**：
+
+   打开一个终端窗口，执行以下命令：
+
    ```bash
-   sudo ip link set can0 up type can bitrate 1000000
+   cd ~/keyboard_agx_arm/scripts 
+   bash can_activate.sh
    ```
 
-   或使用内置参数：
+   或使用内置参数 `--setup-can` ：
 
    ```bash
    python3 main_keyboard.py --arm_type piper --channel can0 --setup-can
@@ -131,10 +163,19 @@
 2. **启动控制**：
 
    ```bash
-   python3 main_keyboard.py --arm_type piper --channel can0 --effector_type AGX_GRIPPER --ik_backend trac_ik
+   python3 main_keyboard.py --arm_type piper --channel can0 --effector_type agx_gripper --ik_backend trac_ik
    ```
 
 3. **网页可视化**：打开浏览器访问 `http://localhost:8080` 查看机械臂 3D 状态
+
+### 启动参数
+
+| 参数 | 默认值 | 说明 | 可选值 |
+|------|--------|------|--------|
+| `arm_type` | `piper` | 机械臂型号 | `piper`, `piper_h`, `piper_l`, `piper_x`, `nero` |
+| `channel` | `can0` | CAN 端口 | - |
+| `effector_type` | `none` 或 `agx_gripper` | 末端执行器类型 | `none`, `agx_gripper` |
+| `ik_backend` | `trac_ik` | 正逆运动学求解器 | `trac_ik`, `curobo`, `pinocchio`, `pyroki_limit`, `pyroki_no_limit` |
 
 ## 键盘控制说明
 

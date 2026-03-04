@@ -7,7 +7,7 @@ class AgxGripperState(EffectorStateBase):
     
     @property
     def name(self) -> Optional[str]:
-        return "AGX_GRIPPER"
+        return "agx_gripper"
 
     def __init__(self, params: dict):
         """Initialize AGX gripper state from configuration parameters."""

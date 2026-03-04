@@ -12,7 +12,7 @@ from cfg.robot_config import (
 )
 from keyboard_agx_arm.arm_controller import ArmController
 
-def main(arm_type="piper", effector_type=None):
+def main(arm_type="piper", effector_type=None, ik_backend="trac_ik"):
     paths = get_robot_paths(arm_type)
     cfg = get_robot_config(arm_type)
 
@@ -22,7 +22,7 @@ def main(arm_type="piper", effector_type=None):
         root_name="/base_link",
         target_link=paths["target_link"],
         arm_type=arm_type,
-        ik_backend="trac_ik",
+        ik_backend=ik_backend,
         effector_type=effector_type,
     )
     ctl.set_tcp_offset(cfg["tcp_offset"])
@@ -48,6 +48,11 @@ if __name__ == "__main__":
     parser.add_argument("--arm_type", default="piper",
                         choices=list(ROBOT_CONFIGS.keys()))
     parser.add_argument("--effector_type", default=None)
+    parser.add_argument("--ik_backend", default="trac_ik")
     args = parser.parse_args()
 
-    main(arm_type=args.arm_type, effector_type=args.effector_type)
+    main(
+        arm_type=args.arm_type,
+        effector_type=args.effector_type,
+        ik_backend=args.ik_backend,
+    )
