@@ -1,67 +1,76 @@
 import numpy as np
+from cfg.robot_config import (
+    CMD_MODE_NORMAL, CMD_MODE_MIT,
+    CONTROL_PARAMS,
+)
+from effector import create_effector_state
 
 
 class ArmState:
-    """All mutable state for the robotic arm in one place."""
 
-    def __init__(self, num_joints: int, joint_limits: list):
+    def __init__(self, num_joints: int, joint_limits: list,
+                 effector_type: str = None, effector_params: dict = None):
         self.num_joints   = num_joints
         self.joint_limits = joint_limits
 
-        # ── Kinematic state ─────────────────────────────────────────
-        self.joint_angles = np.zeros(num_joints)
-        self.xyz_wxyz     = np.zeros(7)
-        self.xyz_rpy      = np.zeros(6)
+        # Kinematic state
+        self.joint_angles   = np.zeros(num_joints)
+        self.tcp_xyz_wxyz   = np.zeros(7)
+        self.tcp_xyz_rpy    = np.zeros(6)
+        self.flange_xyz_rpy = np.zeros(6)
 
-        # ── Gripper ─────────────────────────────────────────────────
-        self.gripper_state     = 0.0    # 0–100 %
-        self.gripper_max_width = 0.07   # metres
+        # Effector
+        self.effector_type = effector_type
+        self.effector = create_effector_state(effector_type, effector_params or {})
 
-        # ── Step sizes ──────────────────────────────────────────────
-        self.joint_step       = 0.5 * np.pi / 180.0   # rad per tick
-        self.gripper_step     = 1.0                    # % per tick
-        self.translation_step = 0.001                  # m per tick
-        self.rotation_step    = 0.5                    # deg per tick
+        # Step sizes
+        self.joint_step       = CONTROL_PARAMS["joint_step_rad"]
+        self.translation_step = CONTROL_PARAMS["translation_step"]
+        self.rotation_step    = CONTROL_PARAMS["rotation_step"]
 
-        # ── Modes ───────────────────────────────────────────────────
-        self.up_level_mode  = "joint"   # joint | pose
-        self.low_level_mode = "joint"   # joint | pose
-        self.command_mode   = 0x00      # 0x00 | 0xAD
+        # Modes
+        self.up_level_mode  = "joint"           # joint | pose
+        self.low_level_mode = "joint"           # joint | pose
+        self.command_mode   = CMD_MODE_NORMAL   # CMD_MODE_NORMAL | CMD_MODE_MIT
 
-        # ── Connection ──────────────────────────────────────────────
+        # Connection
         self.arm_connected = False
         self.arm_enabled   = False
 
-        # ── Speed ───────────────────────────────────────────────────
-        self.speed_factors       = [0.25, 0.5, 1.0]
-        self.speed_factor_index  = 2     # default ×1.0
-        self.movement_speeds     = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
-        self.movement_speed_index = 9    # default 100 %
+        # Speed
+        self._control_speed_factors      = list(CONTROL_PARAMS["control_speed_factors"])
+        self._control_speed_factor_index = CONTROL_PARAMS["control_speed_factor_index"]
+        self._movement_speeds            = list(CONTROL_PARAMS["movement_speeds"])
+        self._movement_speed_index       = CONTROL_PARAMS["movement_speed_index"]
 
-        # ── Saved positions ─────────────────────────────────────────
-        self.saved_positions   = []
-        self.position_index    = -1
-        self.playback_reversed = False
+        # Saved positions
+        self.saved_positions = []
+        self.position_index  = -1
+        self.replay_reversed = False
 
-    # ── Computed properties ─────────────────────────────────────────
 
-    @property
-    def speed_factor(self) -> float:
-        return self.speed_factors[self.speed_factor_index]
+    # Speed factor query
 
-    @property
-    def movement_speed(self) -> int:
-        return self.movement_speeds[self.movement_speed_index]
+    def get_control_speed_factor(self) -> float:
+        """Current velocity scaling factor."""
+        return self._control_speed_factors[self._control_speed_factor_index]
 
-    # ── Joint helpers ───────────────────────────────────────────────
+    def get_movement_speed(self) -> int:
+        """Current speed percentage."""
+        return self._movement_speeds[self._movement_speed_index]
+
+    # Joint limits
 
     def clamp_joints(self):
         """Clip every joint angle to its ``[lower, upper]`` limit."""
         for i in range(self.num_joints):
-            lower, higher = self.joint_limits[i]
-            self.joint_angles[i] = np.clip(self.joint_angles[i], lower, higher)
+            lower, upper = self.joint_limits[i]
+            if self.joint_angles[i] < lower or self.joint_angles[i] > upper:
+                print(f"Warning: Joint {i+1} clamped "
+                      f"({self.joint_angles[i]} → {lower, upper})")
+            self.joint_angles[i] = np.clip(self.joint_angles[i], lower, upper)
 
-    # ── Mode toggles ────────────────────────────────────────────────
+    # Mode toggles
 
     def toggle_up_level_mode(self):
         self.up_level_mode = "pose" if self.up_level_mode == "joint" else "joint"
@@ -70,36 +79,50 @@ class ArmState:
         self.low_level_mode = "pose" if self.low_level_mode == "joint" else "joint"
 
     def toggle_command_mode(self):
-        self.command_mode = 0xAD if self.command_mode == 0x00 else 0x00
+        self.command_mode = (
+            CMD_MODE_MIT if self.command_mode == CMD_MODE_NORMAL
+            else CMD_MODE_NORMAL
+        )
 
-    # ── Speed cycling ───────────────────────────────────────────────
+    # Speed cycling
 
-    def cycle_speed_factor(self, direction: int):
-        """Cycle speed factor: ``+1`` = faster, ``-1`` = slower."""
-        self.speed_factor_index = (
-            (self.speed_factor_index + direction) % len(self.speed_factors)
+    def cycle_control_speed_factor(self, direction: int):
+        """Cycle control_speed factor: ``+1`` = faster, ``-1`` = slower."""
+        self._control_speed_factor_index = (
+            (self._control_speed_factor_index + direction)
+            % len(self._control_speed_factors)
         )
 
     def cycle_movement_speed(self, direction: int):
         """Cycle movement speed: ``+1`` = faster, ``-1`` = slower."""
-        self.movement_speed_index = (
-            (self.movement_speed_index + direction) % len(self.movement_speeds)
+        self._movement_speed_index = (
+            (self._movement_speed_index + direction)
+            % len(self._movement_speeds)
         )
 
-    # ── Gripper ─────────────────────────────────────────────────────
+    # Effector update
 
-    def update_gripper(self, delta: float, speed_factor: float):
-        """Update gripper percentage. *delta* is typically ±1."""
-        self.gripper_state += delta * self.gripper_step * speed_factor
-        self.gripper_state = float(np.clip(self.gripper_state, 0.0, 100.0))
+    def update_effector(self, delta: float):
+        """Update effector state based on input delta."""
+        self.effector.update(delta, self.get_control_speed_factor())
 
-    # ── Position saving / restoring ─────────────────────────────────
+    # Effector state snapshot (for save/restore & display)
+
+    def get_effector_state(self) -> dict:
+        """Return a serialisable snapshot of current effector state."""
+        return self.effector.get_state()
+
+    def _restore_effector_state(self, state: dict):
+        """Restore effector state from a snapshot dictionary."""
+        self.effector.restore_state(state)
+
+    # Position saving / restoring
 
     def save_position(self):
-        """Snapshot current joints + gripper."""
+        """Save current joint angles + effector state."""
         self.saved_positions.append({
-            "joints":  self.joint_angles.copy(),
-            "gripper": self.gripper_state,
+            "joints":   self.joint_angles.copy(),
+            "effector": self.get_effector_state(),
         })
         self.position_index = len(self.saved_positions) - 1
 
@@ -116,35 +139,17 @@ class ArmState:
         self.saved_positions.clear()
         self.position_index = -1
 
-    def toggle_playback_order(self):
-        self.playback_reversed = not self.playback_reversed
+    def toggle_replay_order(self):
+        self.replay_reversed = not self.replay_reversed
 
     def restore_next_position(self) -> bool:
         """Move to the next saved position. Returns ``True`` on success."""
         if not self.saved_positions:
             return False
         n = len(self.saved_positions)
-        step = 1 if self.playback_reversed else -1
+        step = -1 if self.replay_reversed else 1
         self.position_index = (self.position_index + step) % n
         pos = self.saved_positions[self.position_index]
-        self.joint_angles  = pos["joints"].copy()
-        self.gripper_state = pos["gripper"]
+        self.joint_angles = pos["joints"].copy()
+        self._restore_effector_state(pos.get("effector", {}))
         return True
-
-    # ── Serialization ───────────────────────────────────────────────
-
-    def as_dict(self) -> dict:
-        """Return a snapshot suitable for external consumers."""
-        return {
-            "joints":         self.joint_angles.copy(),
-            "xyz_rpy":        self.xyz_rpy.copy(),
-            "gripper":        self.gripper_state,
-            "speed_factor":   self.speed_factor,
-            "movement_speed": self.movement_speed,
-            "arm_connected":  self.arm_connected,
-            "arm_enabled":    self.arm_enabled,
-            "command_mode":   self.command_mode,
-            "up_level_mode":  self.up_level_mode,
-            "low_level_mode": self.low_level_mode,
-        }
-

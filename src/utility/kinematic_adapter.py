@@ -1,14 +1,3 @@
-"""
-Unified kinematic adapter — bridges different IK backends with a common interface.
-
-Supported backends:
-    - ``trac_ik``        — Trac-IK solver
-    - ``curobo``         — cuRobo GPU solver
-    - ``pinocchio``      — Pinocchio + CasADi solver
-    - ``pyroki_limit``   — PyRoKi with joint-limit optimisation
-    - ``pyroki_no_limit``— PyRoKi without joint-limit optimisation
-"""
-
 from abc import ABC, abstractmethod
 from typing import Optional, Tuple, List
 
@@ -16,7 +5,7 @@ import numpy as np
 from scipy.spatial.transform import Rotation as R
 
 
-# ── Quaternion helpers ──────────────────────────────────────────────
+# Quaternion helpers
 
 def wxyz_to_xyzw(wxyz) -> list:
     """Convert ``[w, x, y, z]`` quaternion to ``[x, y, z, w]`` (scipy)."""
@@ -28,7 +17,7 @@ def xyzw_to_wxyz(xyzw) -> list:
     return [xyzw[3], xyzw[0], xyzw[1], xyzw[2]]
 
 
-# ── Abstract base ───────────────────────────────────────────────────
+# Abstract base
 
 class KinematicAdapter(ABC):
     """Unified interface for forward / inverse kinematics solvers."""
@@ -49,7 +38,7 @@ class KinematicAdapter(ABC):
         """Inverse kinematics → joint angles array, or ``None``."""
 
 
-# ── Trac-IK adapter ────────────────────────────────────────────────
+# Trac-IK adapter
 
 class TracIkAdapter(KinematicAdapter):
     """Adapter for the Trac-IK solver."""
@@ -86,7 +75,7 @@ class TracIkAdapter(KinematicAdapter):
         return np.array(result) if result is not None else None
 
 
-# ── cuRobo adapter ──────────────────────────────────────────────────
+# cuRobo adapter
 
 class CuroboAdapter(KinematicAdapter):
     """Adapter for the cuRobo GPU-accelerated solver."""
@@ -119,7 +108,7 @@ class CuroboAdapter(KinematicAdapter):
         return joints
 
 
-# ── Pinocchio adapter ───────────────────────────────────────────────
+# Pinocchio adapter
 
 class PinocchioAdapter(KinematicAdapter):
     """Adapter for the Pinocchio + CasADi solver."""
@@ -147,7 +136,7 @@ class PinocchioAdapter(KinematicAdapter):
         return result[: self._nj] if result is not None else None
 
 
-# ── PyRoKi adapter (limit / no-limit) ──────────────────────────────
+# PyRoKi adapter (limit / no-limit)
 
 class PyrokiAdapter(KinematicAdapter):
     """Adapter for PyRoKi-based solvers (with or without joint-limit optimisation)."""
@@ -179,7 +168,7 @@ class PyrokiAdapter(KinematicAdapter):
         return result[: self._nj] if result is not None else None
 
 
-# ── Factory ─────────────────────────────────────────────────────────
+# Factory
 
 _BACKEND_MAP = {
     "trac_ik":         TracIkAdapter,

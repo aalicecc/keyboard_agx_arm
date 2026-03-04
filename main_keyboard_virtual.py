@@ -1,40 +1,31 @@
-"""
-Keyboard-controlled robotic arm teleoperation (virtual / no physical arm).
-
-Uses pynput for keyboard input — no window required, works in terminal/SSH.
-
-Usage:
-    python main_keyboard_virtual.py --robot nero
-    python main_keyboard_virtual.py --robot piper_x
-"""
-
 import os
 import sys
 import time
 
-# ── Path setup (must come before project imports) ───────────────────
 _PKG_ROOT = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _PKG_ROOT)
 sys.path.insert(0, os.path.join(_PKG_ROOT, "src"))
 
-from cfg.robot_config import ROBOT_DESC_CONFIGS, get_robot_paths
+from cfg.robot_config import (
+    ROBOT_CONFIGS, EFFECTOR_REGISTRY, 
+    get_robot_config, get_robot_paths,
+)
 from keyboard_agx_arm.arm_controller import ArmController
 
+def main(arm_type="piper", effector_type=None, ik_backend="trac_ik"):
+    paths = get_robot_paths(arm_type)
+    cfg = get_robot_config(arm_type)
 
-# ═════════════════════════════════════════════════════════════════════
-# Entry point
-# ═════════════════════════════════════════════════════════════════════
-
-def main(robot_type="piper"):
-    paths = get_robot_paths(robot_type)
     ctl = ArmController(
         urdf_path=paths["urdf_path"],
         mesh_path=paths["mesh_path"],
         root_name="/base_link",
         target_link=paths["target_link"],
-        robot_type=robot_type,
-        ik_backend="trac_ik",
+        arm_type=arm_type,
+        ik_backend=ik_backend,
+        effector_type=effector_type,
     )
+    ctl.set_tcp_offset(cfg["tcp_offset"])
 
     t1 = time.time()
     try:
@@ -54,9 +45,14 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(description="Virtual keyboard arm teleoperation")
-    parser.add_argument("--robot", default="piper",
-                        choices=list(ROBOT_DESC_CONFIGS.keys()))
+    parser.add_argument("--arm_type", default="piper",
+                        choices=list(ROBOT_CONFIGS.keys()))
+    parser.add_argument("--effector_type", default=None)
+    parser.add_argument("--ik_backend", default="trac_ik")
     args = parser.parse_args()
 
-    main(robot_type=args.robot)
-
+    main(
+        arm_type=args.arm_type,
+        effector_type=args.effector_type,
+        ik_backend=args.ik_backend,
+    )

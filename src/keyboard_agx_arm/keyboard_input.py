@@ -3,10 +3,10 @@ import threading
 from pynput import keyboard
 
 
-# ── Edge detector ───────────────────────────────────────────────────
-
+# Edge detector
 class _EdgeDetector:
     """Detect rising edge (released → pressed)."""
+
     __slots__ = ("_prev",)
 
     def __init__(self):
@@ -18,51 +18,49 @@ class _EdgeDetector:
         return triggered
 
 
-# ── KeyboardInput ───────────────────────────────────────────────────
-
+# KeyboardInput
 class KeyboardInput:
 
-    # ── Key bindings ────────────────────────────────────────────────
+    # Key bindings
     # Action keys
-    K_CONNECT  = keyboard.Key.space
-    K_MODE     = '-'
-    K_CMD      = '='
-    K_HOME     = '1'
-    K_SAVE     = '2'
-    K_RESTORE  = '3'
-    K_PLAYBACK = '4'
-    K_SPEED    = 'q'
-    K_MOVE_SPD = 'e'
+    K_CONNECT = keyboard.Key.space
+    K_MODE = "-"
+    K_COMMAND = "="
+    K_HOME = "1"
+    K_SAVE = "2"
+    K_RESTORE = "3"
+    K_REPLAY = "4"
+    K_CONTROL_SPEED = "q"
+    K_MOVEMENT_SPEED = "e"
 
     # Movement axis pairs: (negative_key, positive_key)
     AXIS_PAIRS = (
-        ('a', 'd'),   # 0 — J1 / X
-        ('w', 's'),   # 1 — J2 / Y
-        ('z', 'x'),   # 2 — J3 / Z
-        ('y', 'h'),   # 3 — J4 / Roll
-        ('u', 'j'),   # 4 — J5 / Pitch
-        ('i', 'k'),   # 5 — J6 / Yaw
-        ('o', 'l'),   # 6 — J7 (nero only)
+        ("a", "d"),  # 0 — J1 / X
+        ("w", "s"),  # 1 — J2 / Y
+        ("z", "x"),  # 2 — J3 / Z
+        ("y", "h"),  # 3 — J4 / Roll
+        ("u", "j"),  # 4 — J5 / Pitch
+        ("i", "k"),  # 5 — J6 / Yaw
+        ("o", "l"),  # 6 — J7 (nero only)
     )
 
     # Gripper keys
-    K_GRIP_CLOSE = 'f'
-    K_GRIP_OPEN  = 'g'
+    K_GRIP_CLOSE = "f"
+    K_GRIP_OPEN = "g"
 
     # Long-press threshold (seconds)
     LONG_PRESS_THRESHOLD = 0.5
 
     # Action categories
-    EDGE_ACTIONS       = ("connect", "cmd", "home", "restore")
-    LONG_PRESS_ACTIONS = ("mode", "save", "playback", "speed", "move_spd")
+    EDGE_ACTIONS = ("connect", "command", "home", "restore")
+    LONG_PRESS_ACTIONS = ("mode", "save", "replay", "control_speed", "movement_speed")
 
-    # ── Constructor ─────────────────────────────────────────────────
-
+    # Initialize
     def __init__(self):
         self._pressed_keys: set = set()
         self._lock = threading.Lock()
 
-        # Edge detectors (single-press keys)
+        # Edge detectors
         self._edges = {name: _EdgeDetector() for name in self.EDGE_ACTIONS}
 
         # Long-press state tracking
@@ -71,21 +69,26 @@ class KeyboardInput:
 
         # Logical name → key constant
         self._action_key_map = {
-            "connect":  self.K_CONNECT,  "cmd":      self.K_CMD,
-            "home":     self.K_HOME,     "restore":  self.K_RESTORE,
-            "mode":     self.K_MODE,     "save":     self.K_SAVE,
-            "playback": self.K_PLAYBACK, "speed":    self.K_SPEED,
-            "move_spd": self.K_MOVE_SPD,
+            "connect": self.K_CONNECT,
+            "command": self.K_COMMAND,
+            "home": self.K_HOME,
+            "restore": self.K_RESTORE,
+            "mode": self.K_MODE,
+            "save": self.K_SAVE,
+            "replay": self.K_REPLAY,
+            "control_speed": self.K_CONTROL_SPEED,
+            "movement_speed": self.K_MOVEMENT_SPEED,
         }
 
         # Start the global listener
         self._listener = keyboard.Listener(
-            on_press=self._on_press, on_release=self._on_release,
+            on_press=self._on_press,
+            on_release=self._on_release,
         )
         self._listener.daemon = True
         self._listener.start()
 
-    # ── Raw key events (run in listener thread) ─────────────────────
+    # Raw key events
 
     @staticmethod
     def _normalize_key(key):
@@ -106,24 +109,31 @@ class KeyboardInput:
         with self._lock:
             self._pressed_keys.discard(nk)
 
-    # ── Key state queries ───────────────────────────────────────────
+    # Key state queries
 
     def is_pressed(self, key_id) -> bool:
-        """Thread-safe check whether *key_id* is currently held."""
         with self._lock:
             return key_id in self._pressed_keys
 
-    def axis(self, index: int) -> float:
+    def axis(self, index: int) -> int:
         """Return −1, 0, or +1 from the axis pair at *index*."""
         neg, pos = self.AXIS_PAIRS[index]
-        return float(self.is_pressed(pos)) - float(self.is_pressed(neg))
+        return self.is_pressed(pos) - self.is_pressed(neg)
 
-    def gripper_delta(self) -> float:
+    def gripper_delta(self) -> int:
         """Return −1 (close), 0, or +1 (open) for the gripper."""
-        return (float(self.is_pressed(self.K_GRIP_OPEN))
-                - float(self.is_pressed(self.K_GRIP_CLOSE)))
+        return self.is_pressed(self.K_GRIP_OPEN) - self.is_pressed(self.K_GRIP_CLOSE)
+    
+    def effector_delta(self, effector_type: str) -> int:
+        """Return −1 (close), 0, or +1 (open) for the effector."""
+        if effector_type == "agx_gripper":
+            return self.gripper_delta()
+        # elif effector_type == "REVO2":
+        #     return self.revo2_delta()
+        else:
+            return 0
 
-    # ── Action polling ──────────────────────────────────────────────
+    # Action polling
 
     def poll_edge_actions(self) -> list:
         """Return names of edge-only action keys triggered this tick."""
@@ -149,9 +159,7 @@ class KeyboardInput:
             self._prev_held[name] = pressed
         return actions
 
-    # ── Cleanup ─────────────────────────────────────────────────────
-
+    # Cleanup
     def stop(self):
         """Stop the keyboard listener."""
         self._listener.stop()
-

@@ -1,64 +1,61 @@
-"""
-Keyboard-controlled robotic arm teleoperation (physical arm).
-
-Uses pynput for keyboard input — no window required, works in terminal/SSH.
-
-Usage:
-    python main_keyboard.py --robot piper_x --channel can0
-    python main_keyboard.py --robot nero --channel can0 --effector REVO2
-"""
-
 import os
 import sys
 import time
 import numpy as np
 
-# ── Path setup (must come before project imports) ───────────────────
 _PKG_ROOT = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _PKG_ROOT)
 sys.path.insert(0, os.path.join(_PKG_ROOT, "src"))
 
 from cfg.robot_config import (
-    ROBOT_DESC_CONFIGS, ROBOTS_WITH_MIT_MODE,
-    DEFAULT_TCP_OFFSETS, get_robot_paths,
+    ROBOT_CONFIGS, EFFECTOR_REGISTRY,
+    get_robot_config, get_robot_paths,
+    CMD_MODE_NORMAL, CMD_MODE_MIT,
 )
 from keyboard_agx_arm.arm_controller import ArmController
 from pyAgxArm import create_agx_arm_config, AgxArmFactory
 
 
-# ═════════════════════════════════════════════════════════════════════
-# Physical arm controller (subclass with hardware hooks)
-# ═════════════════════════════════════════════════════════════════════
-
 class PhysicalArmController(ArmController):
     """ArmController with real hardware via pyAgxArm."""
 
     def __init__(self, *, channel="can0", effector_type=None, **kwargs):
-        robot_type = kwargs.get("robot_type", "piper")
-        super().__init__(**kwargs)
+        # Parent resolves effector_type via registry & validates support
+        super().__init__(effector_type=effector_type, **kwargs)
 
-        self.supports_mit = robot_type in ROBOTS_WITH_MIT_MODE
+        arm_type = kwargs.get("arm_type", "piper")
+        cfg = get_robot_config(arm_type)
+        self.supports_mit = cfg["supports_mit"]
 
-        # ── pyAgxArm driver ─────────────────────────────────────────
-        self.cfg_hw   = create_agx_arm_config(robot=robot_type, comm="can", channel=channel)
+        # pyAgxArm driver
+        self.cfg_hw   = create_agx_arm_config(robot=arm_type, comm="can", channel=channel)
         self.hw_robot = AgxArmFactory.create_arm(self.cfg_hw)
 
-        # ── Effector ────────────────────────────────────────────────
-        eff_name = (effector_type
-                    or ROBOT_DESC_CONFIGS[robot_type].get("default_effector", "AGX_GRIPPER"))
-        eff_const = getattr(self.hw_robot.OPTIONS.EFFECTOR, eff_name, self.hw_robot.OPTIONS.EFFECTOR.AGX_GRIPPER)
+        # Hardware effector
+        self._init_hw_effector()
+
+    def _init_hw_effector(self):
+        """Initialise the hardware end-effector based on resolved name."""
+        if self.effector_type == "none":
+            self.end_effector = None
+            return
+        eff_const = getattr(
+            self.hw_robot.OPTIONS.EFFECTOR, self.effector_type.upper(), None)
+        if eff_const is None:
+            raise ValueError(
+                f"Hardware does not support effector '{self.effector_type}'")
         self.end_effector = self.hw_robot.init_effector(eff_const)
 
-    # ── Overridden hooks ────────────────────────────────────────────
+    # Overridable hooks
 
     def _go_home(self):
         if self.state.arm_connected and self.state.arm_enabled:
             home = [0] * self.num_joints
-            self.hw_robot.set_speed_percent(self.state.movement_speed)
-            if self.state.command_mode == 0x00:
+            self.hw_robot.set_speed_percent(self.state.get_movement_speed())
+            if self.state.command_mode == CMD_MODE_NORMAL:
                 self.hw_robot.set_motion_mode(self.hw_robot.OPTIONS.MOTION_MODE.J)
                 self.hw_robot.move_j(home)
-            elif self.state.command_mode == 0xAD and self.supports_mit:
+            elif self.state.command_mode == CMD_MODE_MIT and self.supports_mit:
                 self.hw_robot.set_motion_mode(self.hw_robot.OPTIONS.MOTION_MODE.JS)
                 self.hw_robot.move_js(home)
         super()._go_home()
@@ -78,10 +75,7 @@ class PhysicalArmController(ArmController):
     def _disconnect_and_disable(self):
         if self.state.arm_connected and self.state.arm_enabled:
             self._go_home()
-            try:
-                self.end_effector.disable_gripper()
-            except AttributeError:
-                pass
+            self._disable_hw_effector()
             time.sleep(2)
             self.hw_robot.electronic_emergency_stop()
             time.sleep(1)
@@ -92,72 +86,101 @@ class PhysicalArmController(ArmController):
     def _toggle_command_mode(self):
         if not self.supports_mit:
             return
+
         # Toggle disabled for safety (uncomment to enable)
+        # if self.state.arm_connected and self.state.arm_enabled:
+        #     self.state.toggle_command_mode()
+        #     self._set_hw_motion_mode()
         pass
 
-    # ── Hardware helpers ────────────────────────────────────────────
+    # Hardware helpers
 
     def _set_hw_motion_mode(self):
         """Configure the hardware motion mode based on current state."""
-        if self.state.low_level_mode == "pose" and self.state.command_mode == 0x00:
+        if self.state.low_level_mode == "pose" and self.state.command_mode == CMD_MODE_NORMAL:
             self.hw_robot.set_motion_mode(self.hw_robot.OPTIONS.MOTION_MODE.P)
-        elif self.state.command_mode == 0x00:
+        elif self.state.command_mode == CMD_MODE_NORMAL:
             self.hw_robot.set_motion_mode(self.hw_robot.OPTIONS.MOTION_MODE.J)
-        elif self.state.command_mode == 0xAD and self.supports_mit:
+        elif self.state.command_mode == CMD_MODE_MIT and self.supports_mit:
             self.hw_robot.set_motion_mode(self.hw_robot.OPTIONS.MOTION_MODE.JS)
+
+    def _disable_hw_effector(self):
+        """Gracefully disable the hardware effector on disconnect."""
+        if self.end_effector is None:
+            return
+        if self.effector_type == "agx_gripper":
+            try:
+                self.end_effector.disable_gripper()
+            except AttributeError:
+                pass
+        # elif self.effector_type == "REVO2":
+        #     pass
+
     def send_to_hardware(self):
         """Push the current state to the physical arm every tick."""
         if not (self.state.arm_connected and self.state.arm_enabled):
             return
-        self.hw_robot.set_speed_percent(self.state.movement_speed)
+        self.hw_robot.set_speed_percent(self.state.get_movement_speed())
         if self.state.low_level_mode == "joint":
             self._send_joint_command()
         elif self.state.low_level_mode == "pose":
             self._send_pose_command()
-        self._send_gripper_command()
+        self._send_effector_command()
 
     def _send_joint_command(self):
         joints = self.state.joint_angles[: self.num_joints].tolist()
-        if self.state.command_mode == 0x00:
+        if self.state.command_mode == CMD_MODE_NORMAL:
             self.hw_robot.set_motion_mode(self.hw_robot.OPTIONS.MOTION_MODE.J)
             self.hw_robot.move_j(joints)
-        elif self.state.command_mode == 0xAD and self.supports_mit:
+        elif self.state.command_mode == CMD_MODE_MIT and self.supports_mit:
             self.hw_robot.set_motion_mode(self.hw_robot.OPTIONS.MOTION_MODE.JS)
             self.hw_robot.move_js(joints)
 
     def _send_pose_command(self):
-        xr = self.state.xyz_rpy.copy()
+        xr = self.state.flange_xyz_rpy.copy()
         xr[3:] = np.radians(xr[3:])
-        xr = self.hw_robot.get_tcp2flange_pose(xr.tolist())
-        if self.state.command_mode == 0x00:
+        if self.state.command_mode == CMD_MODE_NORMAL:
             self.hw_robot.set_motion_mode(self.hw_robot.OPTIONS.MOTION_MODE.P)
-            self.hw_robot.move_p(xr)
+            self.hw_robot.move_p(xr.tolist())
 
-    def _send_gripper_command(self):
-        gv = self.state.gripper_max_width * self.state.gripper_state * 1e-2
+    def _send_effector_command(self):
+        """Dispatch effector command to the matching hardware method."""
+        if self.effector_type == "agx_gripper":
+            self._send_gripper_hw()
+        # elif self.effector_type == "REVO2":
+        #     self._send_revo2_hw()
+
+    def _send_gripper_hw(self):
+        """Convert gripper percentage to metres and send."""
+        if self.effector_type != "agx_gripper":
+            return
+        # Access gripper-specific attributes from effector_type object
+        gripper_state = getattr(self.state.effector, "gripper_state", 0.0)
+        gripper_max_width = getattr(self.state.effector, "gripper_max_width", 0.0)
+        gripper_metres = gripper_max_width * gripper_state * 1e-2
         try:
-            self.end_effector.move_gripper(gv, 3)
+            self.end_effector.move_gripper(gripper_metres, 3)
         except AttributeError:
             pass
 
+    # def _send_revo2_hw(self):
+    #     pass
 
-# ═════════════════════════════════════════════════════════════════════
-# Entry point
-# ═════════════════════════════════════════════════════════════════════
+def main(arm_type="piper", channel="can0", effector_type=None, ik_backend="trac_ik"):
+    paths = get_robot_paths(arm_type)
+    cfg = get_robot_config(arm_type)
 
-def main(robot_type="piper", channel="can0", effector_type=None):
-    paths = get_robot_paths(robot_type)
     ctl = PhysicalArmController(
         urdf_path=paths["urdf_path"],
         mesh_path=paths["mesh_path"],
         root_name="/base_link",
         target_link=paths["target_link"],
-        robot_type=robot_type,
-        ik_backend="trac_ik",
+        arm_type=arm_type,
+        ik_backend=ik_backend,
         channel=channel,
         effector_type=effector_type,
     )
-    ctl.set_tcp_offset(DEFAULT_TCP_OFFSETS.get(robot_type, [0, 0, 0]))
+    ctl.set_tcp_offset(cfg["tcp_offset"])
 
     t1 = time.time()
     try:
@@ -178,16 +201,20 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(description="Keyboard robotic arm teleoperation")
-    parser.add_argument("--robot", default="piper_x",
-                        choices=list(ROBOT_DESC_CONFIGS.keys()))
+    parser.add_argument("--arm_type", default="piper",
+                        choices=list(ROBOT_CONFIGS.keys()))
     parser.add_argument("--channel", default="can0")
-    parser.add_argument("--effector", default=None,
-                        choices=["AGX_GRIPPER", "REVO2"])
+    parser.add_argument("--effector_type", default=None)
+    parser.add_argument("--ik_backend", default="trac_ik")
     parser.add_argument("--setup-can", action="store_true")
     args = parser.parse_args()
 
     if args.setup_can:
         os.system(f"sudo ip link set {args.channel} up type can bitrate 1000000")
 
-    main(robot_type=args.robot, channel=args.channel, effector_type=args.effector)
-
+    main(
+        arm_type=args.arm_type,
+        channel=args.channel,
+        effector_type=args.effector_type,
+        ik_backend=args.ik_backend,
+    )
