@@ -2,14 +2,16 @@ import os
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 
-from cfg.robot_config import get_robot_config, resolve_effector
+from cfg.robot_config import (
+    get_robot_config,
+    resolve_effector,
+)
 from utility.tcp_offset import TcpOffset
 from utility.kinematic_adapter import (
     create_kinematic_adapter, xyzw_to_wxyz, wxyz_to_xyzw,
 )
 from .keyboard_input import KeyboardInput
 from .arm_state import ArmState
-from .visualizer import Visualizer
 
 
 class ArmController:
@@ -52,16 +54,16 @@ class ArmController:
             effector_params=effector_params,
         )
         self.tcp = TcpOffset()
-        self.visualizer = Visualizer(urdf_path, mesh_path, root_name)
+        self.keyboard_control_enabled = True
 
         # Dispatch
         self._edge_handlers = {
-            "connect": self._toggle_connection,
+            "home":           self._go_home_action,
             "command": self._toggle_command_mode,
-            "home":    self._home_and_visualize,
             "restore": self._restore_position,
         }
         self._short_handlers = {
+            "connect":        self._toggle_connection,
             "mode":           self.state.toggle_up_level_mode,
             "save":           self.state.save_position,
             "replay":         self.state.toggle_replay_order,
@@ -69,6 +71,7 @@ class ArmController:
             "movement_speed": lambda: self.state.cycle_movement_speed(+1),
         }
         self._long_handlers = {
+            "connect":        self._toggle_keyboard_control,
             "mode":           self.state.toggle_low_level_mode,
             "save":           self.state.clear_current_position,
             "replay":         self.state.clear_all_positions,
@@ -127,18 +130,6 @@ class ArmController:
         except Exception as e:
             print(f"IK error: {e}")
 
-    # Visualization
-    def _update_visualization(self):
-        effector_pct, effector_max_width, effector_urdf_joints = (
-            self.state.effector.get_viz_params()
-        )
-        self.visualizer.update(
-            self.state.joint_angles,
-            effector_pct,
-            effector_max_width,
-            effector_urdf_joints,
-        )
-
     # Continuous movement (called every tick)
     def _update_joint_mode(self):
         """Drive individual joints from keyboard axes."""
@@ -152,7 +143,6 @@ class ArmController:
         if moved:
             self.state.clamp_joints()
             self._forward_kinematics()
-            self._update_visualization()
 
     def _update_pose_mode(self):
         """Move end-effector in Cartesian space from keyboard axes."""
@@ -172,14 +162,12 @@ class ArmController:
         new_rot = rot * R.from_euler("xyz", r_local, degrees=True)
         new_pos = pos + rot.apply(d_local)
         self._inverse_kinematics(new_pos, new_rot)
-        self._update_visualization()
 
     def _update_effector(self):
         """Adjust effector from keyboard."""
         delta = self.input.effector_delta(self.effector_type)
         if delta:
             self.state.update_effector(delta)
-            self._update_visualization()
 
     # Overridable hooks (virtual defaults)
     def _go_home(self):
@@ -208,16 +196,16 @@ class ArmController:
             self._connect_and_enable()
         else:
             self._disconnect_and_disable()
-        self._update_visualization()
 
-    def _home_and_visualize(self):
+    def _go_home_action(self):
         self._go_home()
-        self._update_visualization()
 
     def _restore_position(self):
         if self.state.restore_next_position():
             self._forward_kinematics()
-            self._update_visualization()
+
+    def _toggle_keyboard_control(self):
+        self.keyboard_control_enabled = not self.keyboard_control_enabled
 
     def _dispatch(self, name: str, handlers: dict):
         handler = handlers.get(name)
@@ -227,12 +215,20 @@ class ArmController:
     # Main update
     def update(self):
         """Process one tick: read input → dispatch actions → move arm."""
+        long_actions = self.input.poll_long_press_actions()
+
+        if not self.keyboard_control_enabled:
+            for name, is_long in long_actions:
+                if name == "connect" and is_long:
+                    self._toggle_keyboard_control()
+            return
+
         # Edge-only keys (fire on press)
         for name in self.input.poll_edge_actions():
             self._dispatch(name, self._edge_handlers)
 
         # Long-press keys (fire on release)
-        for name, is_long in self.input.poll_long_press_actions():
+        for name, is_long in long_actions:
             table = self._long_handlers if is_long else self._short_handlers
             self._dispatch(name, table)
 
@@ -290,16 +286,17 @@ class ArmController:
         print(f"Control speed factor: ×{s.get_control_speed_factor()}")
         print(f"Movement speed: {s.get_movement_speed()}%")
         print(f"Arm status:   {arm_st} / {en_st}")
+        print(f"Keyboard ctrl: {'Enabled' if self.keyboard_control_enabled else 'Disabled'}")
         print(f"Replay:       {order}")
         print(f"Saved pos:    {len(s.saved_positions)}  current: {idx}")
 
     def _print_key_guide(self):
         print()
         print("── Function Keys (short / long press) ────")
-        print("Space       Connect / Disconnect")
+        print("Space       Connect/Disconnect (short) / Keyboard ctrl on/off (long)")
         print("-           Up mode  /  Low mode (long)")
         print("=           Command mode (Normal ↔ MIT)")
-        print("1           Home")
+        print("1           Home (short)")
         print("2           Save pos  /  Clear current (long)")
         print("3           Restore pos")
         print("4           Toggle order  /  Clear all (long)")
@@ -321,6 +318,5 @@ class ArmController:
 
     # Cleanup
     def stop(self):
-        """Stop the keyboard listener and visualization process."""
+        """Stop the keyboard listener."""
         self.input.stop()
-        self.visualizer.stop()

@@ -20,10 +20,6 @@ class NullEffectorState(EffectorStateBase):
         """No-op: no effector state to restore."""
         pass
 
-    def get_viz_params(self) -> tuple:
-        """Return zero parameters for visualization."""
-        return (0.0, 0.0, 0)
-
     def get_status_text(self) -> str:
         """Return 'None' status text."""
         return "Effector:     None"

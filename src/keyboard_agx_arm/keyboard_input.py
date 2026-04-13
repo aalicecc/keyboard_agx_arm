@@ -52,8 +52,15 @@ class KeyboardInput:
     LONG_PRESS_THRESHOLD = 0.5
 
     # Action categories
-    EDGE_ACTIONS = ("connect", "command", "home", "restore")
-    LONG_PRESS_ACTIONS = ("mode", "save", "replay", "control_speed", "movement_speed")
+    EDGE_ACTIONS = ("home", "command", "restore")
+    LONG_PRESS_ACTIONS = (
+        "connect",
+        "mode",
+        "save",
+        "replay",
+        "control_speed",
+        "movement_speed",
+    )
 
     # Initialize
     def __init__(self):

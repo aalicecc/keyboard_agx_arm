@@ -1,4 +1,4 @@
-[submodule "agx_arm_robot_description"]
-	path = agx_arm_robot_description
-	url = https://github.com/aalicecc/agx_arm_robot_description.git
+[submodule "src/agx_arm_urdf"]
+	path = src/agx_arm_urdf
+	url = https://github.com/agilexrobotics/agx_arm_urdf.git
 	branch = main

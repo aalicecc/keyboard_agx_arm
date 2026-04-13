@@ -17,13 +17,11 @@ CONTROL_PARAMS = {
 }
 
 NO_EFFECTOR = {
-    "effector_joints":   0,
     "effector_step":     0.0,
 }
 
 EFFECTOR_REGISTRY: Dict[str, dict] = {
     "agx_gripper": {
-        "effector_joints":   2,
         "effector_step":     1.0,   # % per tick
         "gripper_max_width": 0.07,  # metres
         "gripper_min":       0.0,
@@ -32,7 +30,7 @@ EFFECTOR_REGISTRY: Dict[str, dict] = {
 }
 
 _PIPER_BASE = {
-    "desc_dir":              "piper_description",
+    "desc_dir":              "piper",
     "urdf":                  "piper_description.urdf",
     "num_joints":            6,
     "target_link":           "link6",
@@ -47,7 +45,7 @@ _PIPER_BASE = {
 }
 
 _NERO_BASE = {
-    "desc_dir":              "nero_description",
+    "desc_dir":              "nero",
     "urdf":                  "nero_description.urdf",
     "num_joints":            7,
     "target_link":           "link7",
@@ -68,13 +66,13 @@ ROBOT_CONFIGS: Dict[str, dict] = {
                 "default_effector": "agx_gripper",
                 "tcp_offset": [0.0, 0.0, 0.14]},
     "piper_h": {**_PIPER_BASE,
-                "desc_dir": "piper_h_description",
+                "desc_dir": "piper_h",
                 "urdf":     "piper_h_description.urdf"},
     "piper_l": {**_PIPER_BASE,
-                "desc_dir": "piper_l_description",
+                "desc_dir": "piper_l",
                 "urdf":     "piper_l_description.urdf"},
     "piper_x": {**_PIPER_BASE,
-                "desc_dir": "piper_x_description",
+                "desc_dir": "piper_x",
                 "urdf":     "piper_x_description.urdf",
                 "default_effector": "agx_gripper",
                 "tcp_offset": [0.0, 0.0, 0.14]},
@@ -87,7 +85,7 @@ def _robot_description_base_path() -> str:
     """Return the absolute path to the ``robot_description/`` directory."""
     return os.path.join(
         os.path.dirname(os.path.dirname(os.path.realpath(__file__))),
-        "agx_arm_robot_description",
+        "agx_arm_urdf",
     )
 
 
@@ -107,9 +105,8 @@ def get_robot_paths(arm_type: str) -> dict:
     cfg = get_robot_config(arm_type)
     base = _robot_description_base_path()
     
-    prefix = "piper" if "piper" in  cfg["desc_dir"].lower() else "nero"
-    urdf_path = os.path.join(base, f"{prefix}_description", cfg["desc_dir"], "urdf", cfg["urdf"])
-    mesh_path = os.path.join(base, f"{prefix}_description", cfg["desc_dir"], "meshes")
+    urdf_path = os.path.join(base, cfg["desc_dir"], "urdf", cfg["urdf"])
+    mesh_path = os.path.join(base, cfg["desc_dir"], "meshes")
 
     return {
         "urdf_path":   urdf_path,

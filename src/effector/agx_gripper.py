@@ -16,7 +16,6 @@ class AgxGripperState(EffectorStateBase):
         self.step              = params["effector_step"]
         self.min_val           = params["gripper_min"]
         self.max_val           = params["gripper_max"]
-        self.effector_joints   = params["effector_joints"]
 
     def update(self, delta: float, speed_factor: float):
         """Update gripper percentage based on input delta and speed factor."""
@@ -32,10 +31,6 @@ class AgxGripperState(EffectorStateBase):
     def restore_state(self, state: dict):
         """Restore gripper state from snapshot dictionary."""
         self.gripper_state = state.get("gripper", 0.0)
-
-    def get_viz_params(self) -> tuple:
-        """Return visualization parameters: (percentage, max_width, urdf_joints)."""
-        return (self.gripper_state, self.gripper_max_width, self.effector_joints)
 
     def get_status_text(self) -> str:
         """Return formatted gripper status text."""

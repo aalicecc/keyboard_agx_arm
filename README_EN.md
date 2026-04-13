@@ -182,7 +182,7 @@ Control robotic arms (PiPER series, Nero, etc.) via keyboard in terminal/SSH env
 
 | Key | Short Press | Long Press |
 |-----|-------------|------------|
-| **Space** | Connect/Disconnect robotic arm | — |
+| **Space** | Connect/Disconnect robotic arm | Keyboard Control Toggle (Enable/Disable) |
 | **-** | Toggle upper-level control mode (joint ↔ pose) | Toggle lower-level control mode (joint ↔ pose) |
 | **=** | Toggle command mode (Normal ↔ MIT) | — |
 | **1** | Home position | — |

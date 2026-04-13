@@ -40,18 +40,6 @@ class EffectorStateBase(ABC):
         pass
 
     @abstractmethod
-    def get_viz_params(self) -> tuple:
-        """Return visualization parameters for Visualizer.update().
-        
-        Returns:
-            Tuple of (effector_percentage, max_width, urdf_joints):
-            - effector_percentage: Current effector state as percentage (0-100)
-            - max_width: Maximum effector width in metres
-            - urdf_joints: Number of URDF joints for this effector
-        """
-        pass
-
-    @abstractmethod
     def get_status_text(self) -> str:
         """Return formatted status text for terminal display.
         
